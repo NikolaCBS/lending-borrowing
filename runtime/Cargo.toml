@@ -163,6 +163,10 @@ tokens = { git = "https://github.com/open-web3-stack/open-runtime-module-library
 traits = { git = "https://github.com/open-web3-stack/open-runtime-module-library.git", package = "orml-traits", default-features = false }
 bridge-types = { git = "https://github.com/sora-xor/sora2-common.git", default-features = false, optional = true }
 
+# Learning pallets
+#   Lending and borrowing pallet
+lending-borrowing = {version = "1.0.0-dev", path = "../pallets/lending-borrowing", default-features = false }
+
 [dev-dependencies]
 env_logger = "0.9.0"
 framenode-chain-spec = { path = "../node/chain_spec", features = ["test"] }
@@ -290,6 +294,7 @@ std = [
     "xor-fee/std",
     "xst/std",
     "xst-benchmarking/std",
+    "lending-borrowing/std",
 ]
 
 private-net = [
@@ -388,6 +393,7 @@ runtime-benchmarks = [
     "xor-fee/runtime-benchmarks",
     "xst-benchmarking",
     "xst-benchmarking/runtime-benchmarks",
+    "lending-borrowing/runtime-benchmarks"
 ]
 
 reduced-pswap-reward-periods = []
@@ -475,4 +481,5 @@ try-runtime = [
     "pallet-beefy-mmr/try-runtime",
     "bridge-data-signer/try-runtime",
     "multisig-verifier/try-runtime",
+    "lending-borrowing/try-runtime",
 ]
