@@ -4587,6 +4587,7 @@ dependencies = [
  "iroha-migration-runtime-api",
  "leaf-provider",
  "leaf-provider-runtime-api",
+ "lending-borrowing",
  "liquidity-proxy",
  "liquidity-proxy-benchmarking",
  "liquidity-proxy-runtime-api",
@@ -6011,6 +6012,25 @@ dependencies = [
  "scale-info",
  "serde",
  "sp-api",
+ "sp-runtime",
+ "sp-std",
+]
+
+[[package]]
+name = "lending-borrowing"
+version = "1.0.0-dev"
+dependencies = [
+ "assets",
+ "common",
+ "frame-benchmarking",
+ "frame-support",
+ "frame-system",
+ "hex-literal",
+ "pallet-balances",
+ "parity-scale-codec",
+ "scale-info",
+ "sp-core",
+ "sp-io",
  "sp-runtime",
  "sp-std",
 ]
