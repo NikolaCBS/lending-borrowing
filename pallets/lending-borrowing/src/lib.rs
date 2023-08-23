@@ -5,7 +5,7 @@ pub use pallet::*;
 #[frame_support::pallet]
 pub mod pallet {
     /// Pallet imports
-    use common::{balance, AssetInfoProvider, Balance};
+    use common::{AssetInfoProvider, Balance};
     use frame_support::pallet_prelude::DispatchResultWithPostInfo;
     use frame_support::pallet_prelude::*;
     use frame_support::sp_runtime::traits::AccountIdConversion;
