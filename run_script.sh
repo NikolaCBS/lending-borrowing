@@ -1,6 +1,6 @@
 #!/bin/bash
 
-binary="./target/debug/framenode"
+binary="./target/release/framenode"
 
 chain="local"
 

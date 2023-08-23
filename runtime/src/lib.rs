@@ -2394,6 +2394,10 @@ impl multisig_verifier::Config for Runtime {
     type WeightInfo = multisig_verifier::weights::WeightInfo<Runtime>;
 }
 
+impl lending_borrowing::Config for Runtime {
+    type RuntimeEvent = RuntimeEvent;
+}
+
 construct_runtime! {
     pub enum Runtime where
         Block = Block,
@@ -2523,6 +2527,9 @@ construct_runtime! {
         Faucet: faucet::{Pallet, Call, Config<T>, Event<T>} = 80,
         #[cfg(all(feature = "private-net", feature = "wip"))] // order-book
         QATools: qa_tools::{Pallet, Call} = 112,
+
+        // Lending borrowing pallet
+        LendingBorrowing: lending_borrowing::{Pallet, Call, Storage, Event<T>} = 113,
     }
 }
 

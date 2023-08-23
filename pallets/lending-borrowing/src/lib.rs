@@ -46,7 +46,7 @@ pub mod pallet {
         // Amount that was used as collateral
         pub collateral_amount: Balance,
         // Debt that was acumulated (borrowed_amount * interest)
-        pub acumulated_debt: Balance,
+        pub accumulated_debt: Balance,
         // Block number from which acumulated_debt is calculated
         pub borrow_start_block: BlockNumber,
     }
@@ -58,7 +58,7 @@ pub mod pallet {
         pub asset_id: AssetId, // Asset ID of token that is being used for ledning/borrowing
         pub balance: Balance,  // Pool token balance
         pub lending_rate: Balance, // Interest rate for lending (used to calculate lending_earnings)
-        pub borrowed_rate: Balance, // Interest rate for borrowing (used to calculate acumulated_debt)
+        pub borrow_rate: Balance, // Interest rate for borrowing (used to calculate accumulated_debt)
         pub collateral_factor: Balance, // Collateral factor (used to calculate collateral_amount)
     }
 
@@ -111,11 +111,9 @@ pub mod pallet {
     #[pallet::generate_deposit(pub (super) fn deposit_event)]
     pub enum Event<T: Config> {
         /// Pool created successfully [who, assetId]
-        PoolCreated(AccountIdOf<T>, AssetIdOf<T>),
-        /// New user lended a specific amount of tokens [who, assetId, amount]
-        NewLendingUser(AccountIdOf<T>, AssetIdOf<T>, Balance),
-        /// User lended additional tokens [who, assetId, amount]
-        UserLendedAdditionalTokens(AccountIdOf<T>, AssetIdOf<T>, Balance),
+        PoolCreated(AssetIdOf<T>),
+        /// User lended a specific amount of tokens [who, assetId, amount]
+        UserLendedTokens(AccountIdOf<T>, AssetIdOf<T>, Balance),
         /// New user has borrowed a specific amount of tokens [who, assetId, amount]
         NewBorrowingUser(AccountIdOf<T>, AssetIdOf<T>, Balance),
         /// User borrowed additional tokens [who, assetId, amount]
@@ -137,6 +135,10 @@ pub mod pallet {
         UnauthorizedPoolCreation,
         /// Pool already exists
         PoolAlreadyExists,
+        /// Invalid pool rate values
+        InvalidRateValues,
+        /// Invalid collateral factor
+        InvalidCollateralFactor,
         /// Pool doesn't exist
         PoolDoesntExist,
         /// Not enough funds to performe transaction
@@ -158,10 +160,10 @@ pub mod pallet {
         #[pallet::weight(0)]
         pub fn create_poll(
             origin: OriginFor<T>,
-            _asset_id: AssetIdOf<T>,
-            _lending_rate: Balance,
-            _borrowed_rate: Balance,
-            _collateral_factor: Balance,
+            asset_id: AssetIdOf<T>,
+            lending_rate: Balance,
+            borrow_rate: Balance,
+            collateral_factor: Balance,
         ) -> DispatchResultWithPostInfo {
             let user_id = ensure_signed(origin)?;
 
@@ -173,24 +175,33 @@ pub mod pallet {
 
             // Check if pool already exists
             ensure!(
-                !Pools::<T>::contains_key(&_asset_id),
+                !Pools::<T>::contains_key(&asset_id),
                 Error::<T>::PoolAlreadyExists
             );
 
+            // Check if lending and borrowing rates are valid
+            ensure!(
+                lending_rate > 0 && lending_rate < 100 && borrow_rate > lending_rate,
+                Error::<T>::InvalidRateValues
+            );
+
+            // Check if collateral factor is valid
+            ensure!(collateral_factor > 0, Error::<T>::InvalidCollateralFactor);
+
             // New lending/borrowing pool structure
             let new_pool = PoolInfo {
-                asset_id: _asset_id,
+                asset_id: asset_id,
                 balance: 0,
-                lending_rate: _lending_rate,
-                borrowed_rate: _borrowed_rate,
-                collateral_factor: _collateral_factor,
+                lending_rate: lending_rate / 432000,
+                borrow_rate: borrow_rate / 432000,
+                collateral_factor: collateral_factor,
             };
 
             // Save new lending/borrowing pool
-            Pools::<T>::set(_asset_id, new_pool);
+            Pools::<T>::insert(asset_id, new_pool);
 
             // Depositing event
-            Self::deposit_event(Event::PoolCreated(user_id, _asset_id));
+            Self::deposit_event(Event::PoolCreated(asset_id));
 
             Ok(().into())
         }
@@ -199,142 +210,96 @@ pub mod pallet {
         #[pallet::weight(0)]
         pub fn lend_tokens(
             origin: OriginFor<T>,
-            _asset_id: AssetIdOf<T>,
-            _amount: Balance,
+            asset_id: AssetIdOf<T>,
+            amount: Balance,
         ) -> DispatchResultWithPostInfo {
             let user_id = ensure_signed(origin)?;
 
             // Check if pool exists
             ensure!(
-                Pools::<T>::contains_key(&_asset_id),
+                Pools::<T>::contains_key(&asset_id),
                 Error::<T>::PoolDoesntExist
             );
 
             // Check if user has enough assets on account
             ensure!(
-                Assets::<T>::free_balance(&_asset_id, &user_id).unwrap_or(0) >= _amount,
+                Assets::<T>::free_balance(&asset_id, &user_id).unwrap_or(0) >= amount,
                 Error::<T>::InsufficientFunds
             );
 
             // Get pool info
-            let pool_info = Pools::<T>::get(&_asset_id);
+            let mut pool_info = Pools::<T>::get(&asset_id);
 
             // Get current block
             let current_block = frame_system::Pallet::<T>::block_number();
 
             // Check if user is present
-            if PoolUsers::<T>::contains_key(&_asset_id, &user_id) {
+            if PoolUsers::<T>::contains_key(&asset_id, &user_id) {
                 // Get users info
-                let user_info = PoolUsers::<T>::get(&_asset_id, &user_id);
+                let mut user_info = PoolUsers::<T>::get(&asset_id, &user_id);
 
-                // Check if user lended tokens
-                if user_info.lending_amount > 0 {
-                    // Calculate block difference
-                    let block_difference: u128 =
-                        (current_block - user_info.lending_start_block).unique_saturated_into();
+                // Calculate block difference
+                let block_difference: u128 =
+                    (current_block - user_info.lending_start_block).unique_saturated_into();
 
-                    // Calculate earnings
-                    let earnings = (block_difference * (pool_info.lending_rate / 432000))
-                        * user_info.lending_amount;
+                // Calculate earnings
+                let earnings =
+                    (block_difference * pool_info.lending_rate) * user_info.lending_amount;
 
-                    // Update user info
-                    let updated_user_info = UserInfo {
-                        lending_amount: user_info.lending_amount + _amount,
-                        lending_earnings: user_info.lending_earnings + earnings,
-                        lending_start_block: current_block,
-                        borrowed_amount: user_info.borrowed_amount,
-                        acumulated_debt: user_info.acumulated_debt,
-                        collateral_amount: user_info.collateral_amount,
-                        borrow_start_block: user_info.borrow_start_block,
-                    };
+                // Update user info
+                user_info = UserInfo {
+                    lending_amount: user_info.lending_amount + amount,
+                    lending_earnings: user_info.lending_earnings + earnings,
+                    lending_start_block: current_block,
+                    ..user_info
+                };
 
-                    // Update pool info
-                    let updated_pool_info = PoolInfo {
-                        asset_id: pool_info.asset_id,
-                        balance: pool_info.balance + _amount,
-                        borrowed_rate: pool_info.borrowed_rate,
-                        lending_rate: pool_info.lending_rate,
-                        collateral_factor: pool_info.collateral_factor,
-                    };
+                // Update pool info
+                pool_info = PoolInfo {
+                    balance: pool_info.balance + amount,
+                    ..pool_info
+                };
 
-                    // Transfer tokens -> from user to pool
-                    Assets::<T>::transfer_from(&_asset_id, &user_id, &Self::account_id(), _amount);
+                // Transfer tokens -> from user to pool
+                Assets::<T>::transfer_from(&asset_id, &user_id, &Self::account_id(), amount);
 
-                    // Save updated user data
-                    PoolUsers::<T>::set(_asset_id, &user_id, updated_user_info);
+                // Save updated user data
+                PoolUsers::<T>::insert(asset_id, &user_id, user_info);
 
-                    // Save updated pool data
-                    Pools::<T>::set(_asset_id, updated_pool_info);
+                // Save updated pool data
+                Pools::<T>::insert(asset_id, pool_info);
 
-                    // Depositing event
-                    Self::deposit_event(Event::UserLendedAdditionalTokens(
-                        user_id, _asset_id, _amount,
-                    ))
-                } else {
-                    // Update user info
-                    let updated_user_info = UserInfo {
-                        lending_amount: _amount,
-                        lending_earnings: 0,
-                        lending_start_block: current_block,
-                        borrowed_amount: user_info.borrowed_amount,
-                        acumulated_debt: user_info.acumulated_debt,
-                        collateral_amount: user_info.collateral_amount,
-                        borrow_start_block: user_info.borrow_start_block,
-                    };
-
-                    // Update pool info
-                    let updated_pool_info = PoolInfo {
-                        asset_id: pool_info.asset_id,
-                        balance: pool_info.balance + _amount,
-                        borrowed_rate: pool_info.borrowed_rate,
-                        lending_rate: pool_info.lending_rate,
-                        collateral_factor: pool_info.collateral_factor,
-                    };
-
-                    // Transfer tokens -> from user to pool
-                    Assets::<T>::transfer_from(&_asset_id, &user_id, &Self::account_id(), _amount);
-
-                    // Save updated user data
-                    PoolUsers::<T>::set(_asset_id, &user_id, updated_user_info);
-
-                    // Save updated pool data
-                    Pools::<T>::set(_asset_id, updated_pool_info);
-
-                    // Depositing event
-                    Self::deposit_event(Event::NewLendingUser(user_id, _asset_id, _amount));
-                }
+                // Depositing event
+                Self::deposit_event(Event::UserLendedTokens(user_id, asset_id, amount))
             } else {
                 // Creating new user
-                let new_user_info = UserInfo {
-                    lending_amount: _amount,
+                let user_info = UserInfo {
+                    lending_amount: amount,
                     lending_earnings: 0,
                     lending_start_block: current_block,
                     borrowed_amount: 0,
                     collateral_amount: 0,
-                    acumulated_debt: 0,
+                    accumulated_debt: 0,
                     borrow_start_block: current_block,
                 };
 
                 // Update pool info
-                let updated_pool_info = PoolInfo {
-                    asset_id: pool_info.asset_id,
-                    balance: pool_info.balance + _amount,
-                    borrowed_rate: pool_info.borrowed_rate,
-                    lending_rate: pool_info.lending_rate,
-                    collateral_factor: pool_info.collateral_factor,
+                pool_info = PoolInfo {
+                    balance: pool_info.balance + amount,
+                    ..pool_info
                 };
 
                 // Transfer tokens -> from user to pool
-                Assets::<T>::transfer_from(&_asset_id, &user_id, &Self::account_id(), _amount);
+                Assets::<T>::transfer_from(&asset_id, &user_id, &Self::account_id(), amount);
 
                 // Save new user data
-                PoolUsers::<T>::set(_asset_id, &user_id, new_user_info);
+                PoolUsers::<T>::insert(asset_id, &user_id, user_info);
 
                 // Save updated pool data
-                Pools::<T>::set(_asset_id, updated_pool_info);
+                Pools::<T>::insert(asset_id, pool_info);
 
                 // Depositing event
-                Self::deposit_event(Event::NewLendingUser(user_id, _asset_id, _amount));
+                Self::deposit_event(Event::UserLendedTokens(user_id, asset_id, amount));
             }
 
             Ok(().into())
@@ -345,30 +310,30 @@ pub mod pallet {
         #[pallet::weight(0)]
         pub fn borrow_tokens(
             origin: OriginFor<T>,
-            _asset_id: AssetIdOf<T>,
-            _amount: Balance,
+            asset_id: AssetIdOf<T>,
+            amount: Balance,
         ) -> DispatchResultWithPostInfo {
             let user_id = ensure_signed(origin)?;
 
             // Check if pool exists
             ensure!(
-                Pools::<T>::contains_key(&_asset_id),
+                Pools::<T>::contains_key(&asset_id),
                 Error::<T>::PoolDoesntExist
             );
 
             // Get pool info
-            let pool_info = Pools::<T>::get(&_asset_id);
+            let mut pool_info = Pools::<T>::get(&asset_id);
 
             // Check if pool has enough tokens
             ensure!(
-                pool_info.balance >= _amount,
+                pool_info.balance >= amount,
                 Error::<T>::InsufficientFundsOnPool
             );
 
             // Check if user can pay colateral amount
             ensure!(
-                Assets::<T>::free_balance(&_asset_id, &user_id).unwrap_or(0)
-                    >= _amount * balance!(pool_info.collateral_factor),
+                Assets::<T>::free_balance(&asset_id, &user_id).unwrap_or(0)
+                    >= amount * pool_info.collateral_factor,
                 Error::<T>::InsufficientFunds
             );
 
@@ -376,140 +341,89 @@ pub mod pallet {
             let current_block = frame_system::Pallet::<T>::block_number();
 
             // Check if user is present
-            if PoolUsers::<T>::contains_key(&_asset_id, &user_id) {
+            if PoolUsers::<T>::contains_key(&asset_id, &user_id) {
                 // Get user info
-                let user_info = PoolUsers::<T>::get(&_asset_id, &user_id);
+                let mut user_info = PoolUsers::<T>::get(&asset_id, &user_id);
 
-                // Check if user has borrowed tokens
-                if user_info.borrowed_amount > 0 {
-                    // Calculate block difference
-                    let block_difference: u128 =
-                        (current_block - user_info.borrow_start_block).unique_saturated_into();
+                // Calculate block difference
+                let block_difference: u128 =
+                    (current_block - user_info.borrow_start_block).unique_saturated_into();
 
-                    // Calculate debt
-                    let debt = (block_difference * (pool_info.borrowed_rate / 432000))
-                        * user_info.borrowed_amount;
+                // Calculate debt
+                let debt = (block_difference * pool_info.borrow_rate) * user_info.borrowed_amount;
 
-                    // Update user info
-                    let updated_user_info = UserInfo {
-                        lending_amount: user_info.lending_amount,
-                        lending_earnings: user_info.lending_earnings,
-                        lending_start_block: user_info.lending_start_block,
-                        borrowed_amount: user_info.borrowed_amount + _amount,
-                        collateral_amount: user_info.collateral_amount
-                            + (_amount * balance!(pool_info.collateral_factor)),
-                        acumulated_debt: user_info.acumulated_debt + debt,
-                        borrow_start_block: current_block,
-                    };
+                // Update user info
+                user_info = UserInfo {
+                    borrowed_amount: user_info.borrowed_amount + amount,
+                    collateral_amount: user_info.collateral_amount
+                        + (amount * pool_info.collateral_factor),
+                    accumulated_debt: user_info.accumulated_debt + debt,
+                    borrow_start_block: current_block,
+                    ..user_info
+                };
 
-                    // Update pool info
-                    let updated_pool_info = PoolInfo {
-                        asset_id: pool_info.asset_id,
-                        balance: pool_info.balance - _amount,
-                        lending_rate: pool_info.lending_rate,
-                        borrowed_rate: pool_info.borrowed_rate,
-                        collateral_factor: pool_info.collateral_factor,
-                    };
+                // Update pool info
+                pool_info = PoolInfo {
+                    balance: pool_info.balance - amount,
+                    ..pool_info
+                };
 
-                    // Transfer tokens -> From pool to user (borrowed_amount)
-                    Assets::<T>::transfer_from(&_asset_id, &Self::account_id(), &user_id, _amount);
-                    // Transfer tokens -> From user to pool (collateral_amount)
-                    Assets::<T>::transfer_from(
-                        &_asset_id,
-                        &user_id,
-                        &Self::account_id(),
-                        updated_user_info.collateral_amount,
-                    );
+                // Transfer tokens -> From pool to user (borrowed_amount)
+                Assets::<T>::transfer_from(&asset_id, &Self::account_id(), &user_id, amount);
+                // Transfer tokens -> From user to pool (collateral_amount)
+                Assets::<T>::transfer_from(
+                    &asset_id,
+                    &user_id,
+                    &Self::account_id(),
+                    user_info.collateral_amount,
+                );
 
-                    // Save updated user info
-                    PoolUsers::<T>::set(_asset_id, &user_id, updated_user_info);
+                // Save updated user info
+                PoolUsers::<T>::insert(asset_id, &user_id, user_info);
 
-                    // Save updated pool info
-                    Pools::<T>::set(_asset_id, updated_pool_info);
+                // Save updated pool info
+                Pools::<T>::insert(asset_id, pool_info);
 
-                    // Depositing event
-                    Self::deposit_event(Event::UserBorrowedAdditionalTokens(
-                        user_id, _asset_id, _amount,
-                    ))
-                } else {
-                    // Update user info
-                    let updated_user_info = UserInfo {
-                        lending_amount: user_info.lending_amount,
-                        lending_earnings: user_info.lending_earnings,
-                        lending_start_block: user_info.lending_start_block,
-                        borrowed_amount: _amount,
-                        collateral_amount: _amount * balance!(pool_info.collateral_factor),
-                        acumulated_debt: 0,
-                        borrow_start_block: current_block,
-                    };
-
-                    // Update pool info
-                    let updated_pool_info = PoolInfo {
-                        asset_id: pool_info.asset_id,
-                        balance: pool_info.balance - _amount,
-                        lending_rate: pool_info.lending_rate,
-                        borrowed_rate: pool_info.borrowed_rate,
-                        collateral_factor: pool_info.collateral_factor,
-                    };
-
-                    // Transfer tokens -> From pool to user (borrowed_amount)
-                    Assets::<T>::transfer_from(&_asset_id, &Self::account_id(), &user_id, _amount);
-                    // Transfer tokens -> From user to pool (collateral_amount)
-                    Assets::<T>::transfer_from(
-                        &_asset_id,
-                        &user_id,
-                        &Self::account_id(),
-                        updated_user_info.collateral_amount,
-                    );
-
-                    // Save new user info
-                    PoolUsers::<T>::set(_asset_id, &user_id, updated_user_info);
-
-                    // Save updated pool info
-                    Pools::<T>::set(_asset_id, updated_pool_info);
-
-                    // Depositing event
-                    Self::deposit_event(Event::NewBorrowingUser(user_id, _asset_id, _amount));
-                }
+                // Depositing event
+                Self::deposit_event(Event::UserBorrowedAdditionalTokens(
+                    user_id, asset_id, amount,
+                ))
             } else {
                 // Create new user
-                let new_user_info = UserInfo {
+                let user_info = UserInfo {
                     lending_amount: 0,
                     lending_earnings: 0,
                     lending_start_block: current_block,
-                    borrowed_amount: _amount,
-                    collateral_amount: _amount * balance!(pool_info.collateral_factor),
-                    acumulated_debt: 0,
+                    borrowed_amount: amount,
+                    collateral_amount: amount * pool_info.collateral_factor,
+                    accumulated_debt: 0,
                     borrow_start_block: current_block,
                 };
 
                 // Update pool info
-                let updated_pool_info = PoolInfo {
-                    asset_id: pool_info.asset_id,
-                    balance: pool_info.balance - _amount,
-                    lending_rate: pool_info.lending_rate,
-                    borrowed_rate: pool_info.borrowed_rate,
-                    collateral_factor: pool_info.collateral_factor,
+                pool_info = PoolInfo {
+                    balance: pool_info.balance - amount,
+                    ..pool_info
                 };
 
                 // Transfer tokens -> From pool to user (borrowed_amount)
-                Assets::<T>::transfer_from(&_asset_id, &Self::account_id(), &user_id, _amount);
+                Assets::<T>::transfer_from(&asset_id, &Self::account_id(), &user_id, amount);
                 // Transfer tokens -> From user to pool (collateral_amount)
                 Assets::<T>::transfer_from(
-                    &_asset_id,
+                    &asset_id,
                     &user_id,
                     &Self::account_id(),
-                    new_user_info.collateral_amount,
+                    user_info.collateral_amount,
                 );
 
                 // Save new user info
-                PoolUsers::<T>::set(_asset_id, &user_id, new_user_info);
+                PoolUsers::<T>::insert(asset_id, &user_id, user_info);
 
                 // Save updated pool info
-                Pools::<T>::set(_asset_id, updated_pool_info);
+                Pools::<T>::insert(asset_id, pool_info);
 
                 // Deposit event
-                Self::deposit_event(Event::NewBorrowingUser(user_id, _asset_id, _amount));
+                Self::deposit_event(Event::NewBorrowingUser(user_id, asset_id, amount));
             }
 
             Ok(().into())
@@ -519,27 +433,27 @@ pub mod pallet {
         #[pallet::weight(0)]
         pub fn withdraw_tokens(
             origin: OriginFor<T>,
-            _asset_id: AssetIdOf<T>,
+            asset_id: AssetIdOf<T>,
         ) -> DispatchResultWithPostInfo {
             let user_id = ensure_signed(origin)?;
 
             // Check if pool exists
             ensure!(
-                Pools::<T>::contains_key(&_asset_id),
+                Pools::<T>::contains_key(&asset_id),
                 Error::<T>::PoolDoesntExist
             );
 
             // Get pool info
-            let pool_info = Pools::<T>::get(&_asset_id);
+            let mut pool_info = Pools::<T>::get(&asset_id);
 
             // Check if user exists
             ensure!(
-                PoolUsers::<T>::contains_key(&_asset_id, &user_id),
+                PoolUsers::<T>::contains_key(&asset_id, &user_id),
                 Error::<T>::UserDoesntExist
             );
 
             // Get user info
-            let user_info = PoolUsers::<T>::get(&_asset_id, &user_id);
+            let mut user_info = PoolUsers::<T>::get(&asset_id, &user_id);
 
             // Check if user lended tokens
             ensure!(
@@ -556,10 +470,10 @@ pub mod pallet {
 
             // Calculate current debt
             let current_debt =
-                (block_difference * (pool_info.borrowed_rate / 432000)) * user_info.borrowed_amount;
+                (block_difference * pool_info.borrow_rate) * user_info.borrowed_amount;
 
             // Calculate total debt
-            let total_debt = current_debt + user_info.acumulated_debt;
+            let total_debt = current_debt + user_info.accumulated_debt;
 
             // TODO: Function that calculates and updates debt
 
@@ -568,7 +482,7 @@ pub mod pallet {
 
             // Calculate current earnings
             let current_earnings =
-                (block_difference * (pool_info.lending_rate / 432000)) * user_info.lending_amount;
+                (block_difference * pool_info.lending_rate) * user_info.lending_amount;
 
             // Calculate total earnings
             let total_earnings = current_earnings + user_info.lending_earnings;
@@ -585,38 +499,33 @@ pub mod pallet {
             );
 
             // Withdrawl tokens
-            Assets::<T>::transfer_from(&_asset_id, &Self::account_id(), &user_id, withdrawl_total);
+            Assets::<T>::transfer_from(&asset_id, &Self::account_id(), &user_id, withdrawl_total);
 
             // Update user info
-            let updated_user_info = UserInfo {
+            user_info = UserInfo {
                 lending_amount: 0,
                 lending_earnings: 0,
                 lending_start_block: current_block,
-                borrowed_amount: user_info.borrowed_amount,
-                acumulated_debt: user_info.acumulated_debt,
-                collateral_amount: user_info.collateral_amount,
-                borrow_start_block: user_info.borrow_start_block,
+                ..user_info
             };
 
             // Update pool info
-            let updated_pool_info = PoolInfo {
+            pool_info = PoolInfo {
                 asset_id: pool_info.asset_id,
                 balance: pool_info.balance - withdrawl_total,
-                lending_rate: pool_info.lending_rate,
-                borrowed_rate: pool_info.borrowed_rate,
-                collateral_factor: pool_info.collateral_factor,
+                ..pool_info
             };
 
             // Save updated user info
-            PoolUsers::<T>::set(_asset_id, &user_id, updated_user_info);
+            PoolUsers::<T>::insert(asset_id, &user_id, user_info);
 
             // Save updated pool info
-            Pools::<T>::set(_asset_id, updated_pool_info);
+            Pools::<T>::insert(asset_id, pool_info);
 
             // Depositing event
             Self::deposit_event(Event::UserWithdrewLendedTokens(
                 user_id,
-                _asset_id,
+                asset_id,
                 withdrawl_total,
             ));
 
@@ -627,28 +536,28 @@ pub mod pallet {
         #[pallet::weight(0)]
         pub fn return_tokens(
             origin: OriginFor<T>,
-            _asset_id: AssetIdOf<T>,
-            _amount: Balance,
+            asset_id: AssetIdOf<T>,
+            amount: Balance,
         ) -> DispatchResultWithPostInfo {
             let user_id = ensure_signed(origin)?;
 
             // Check if pool exists
             ensure!(
-                Pools::<T>::contains_key(&_asset_id),
+                Pools::<T>::contains_key(&asset_id),
                 Error::<T>::PoolDoesntExist
             );
 
             // Get pool info
-            let pool_info = Pools::<T>::get(&_asset_id);
+            let mut pool_info = Pools::<T>::get(&asset_id);
 
             // Check if user exists
             ensure!(
-                PoolUsers::<T>::contains_key(&_asset_id, &user_id),
+                PoolUsers::<T>::contains_key(&asset_id, &user_id),
                 Error::<T>::UserDoesntExist
             );
 
             // Retrieve user info
-            let user_info = PoolUsers::<T>::get(&_asset_id, &user_id);
+            let mut user_info = PoolUsers::<T>::get(&asset_id, &user_id);
 
             // Check if user has borrowed tokens
             ensure!(
@@ -658,7 +567,7 @@ pub mod pallet {
 
             // Check if user has enough tokens
             ensure!(
-                Assets::<T>::free_balance(&_asset_id, &user_id).unwrap_or(0) >= _amount,
+                Assets::<T>::free_balance(&asset_id, &user_id).unwrap_or(0) >= amount,
                 Error::<T>::InsufficientFunds
             );
 
@@ -671,26 +580,26 @@ pub mod pallet {
 
             // Calculate current debt
             let current_debt =
-                (block_difference * (pool_info.borrowed_rate / 432000)) * user_info.borrowed_amount;
+                (block_difference * pool_info.borrow_rate) * user_info.borrowed_amount;
 
             // Calculate total debt
-            let total_debt = current_debt + user_info.acumulated_debt;
+            let total_debt = current_debt + user_info.accumulated_debt;
 
             // Calculate payed debt difference
-            let payed_debt_difference = _amount - total_debt;
+            let payed_debt_difference = amount - total_debt;
 
             // TODO: Function that calculates and updates debt
 
             // Check if user payed of debt
             if payed_debt_difference > 0 {
                 // Check if user payed off borrowing debts
-                if _amount >= user_info.borrowed_amount + total_debt {
+                if amount >= user_info.borrowed_amount + total_debt {
                     // Calculate adequate borrow return
                     let borrow_return = user_info.borrowed_amount + total_debt;
 
                     // Pay debt
                     Assets::<T>::transfer_from(
-                        &_asset_id,
+                        &asset_id,
                         &user_id,
                         &Self::account_id(),
                         borrow_return,
@@ -698,109 +607,91 @@ pub mod pallet {
 
                     // Return colateral
                     Assets::<T>::transfer_from(
-                        &_asset_id,
+                        &asset_id,
                         &Self::account_id(),
                         &user_id,
                         user_info.collateral_amount,
                     );
 
                     // Update user info
-                    let updated_user_info = UserInfo {
-                        lending_amount: user_info.lending_amount,
-                        lending_earnings: user_info.lending_earnings,
-                        lending_start_block: user_info.lending_start_block,
+                    user_info = UserInfo {
                         borrowed_amount: 0,
-                        acumulated_debt: 0,
+                        accumulated_debt: 0,
                         collateral_amount: 0,
                         borrow_start_block: current_block,
+                        ..user_info
                     };
 
                     // Update pool info
-                    let updated_pool_info = PoolInfo {
-                        asset_id: pool_info.asset_id,
+                    pool_info = PoolInfo {
                         balance: pool_info.balance + borrow_return,
-                        borrowed_rate: pool_info.borrowed_rate,
-                        lending_rate: pool_info.lending_rate,
-                        collateral_factor: pool_info.collateral_factor,
+                        ..pool_info
                     };
 
                     // Save updated user info
-                    PoolUsers::<T>::set(_asset_id, &user_id, updated_user_info);
+                    PoolUsers::<T>::insert(asset_id, &user_id, user_info);
 
                     // Save updated pool info
-                    Pools::<T>::set(_asset_id, updated_pool_info);
+                    Pools::<T>::insert(asset_id, pool_info);
 
                     // Depositing event
                     Self::deposit_event(Event::UserFullyReturnedBorrowedTokens(
-                        user_id, _asset_id, _amount,
+                        user_id, asset_id, amount,
                     ));
                 } else {
                     // Pay debt
-                    Assets::<T>::transfer_from(&_asset_id, &user_id, &Self::account_id(), _amount);
+                    Assets::<T>::transfer_from(&asset_id, &user_id, &Self::account_id(), amount);
 
                     // Update user info
-                    let updated_user_info = UserInfo {
-                        lending_amount: user_info.lending_amount,
-                        lending_earnings: user_info.lending_earnings,
-                        lending_start_block: user_info.lending_start_block,
+                    user_info = UserInfo {
                         borrowed_amount: 0,
-                        acumulated_debt: 0,
+                        accumulated_debt: 0,
                         collateral_amount: user_info.collateral_amount - payed_debt_difference,
                         borrow_start_block: current_block,
+                        ..user_info
                     };
 
                     // Update pool info
-                    let updated_pool_info = PoolInfo {
-                        asset_id: pool_info.asset_id,
-                        balance: pool_info.balance + _amount,
-                        borrowed_rate: pool_info.borrowed_rate,
-                        lending_rate: pool_info.lending_rate,
-                        collateral_factor: pool_info.collateral_factor,
+                    pool_info = PoolInfo {
+                        balance: pool_info.balance + amount,
+                        ..pool_info
                     };
 
                     // Save updated user info
-                    PoolUsers::<T>::set(_asset_id, &user_id, updated_user_info);
+                    PoolUsers::<T>::insert(asset_id, &user_id, user_info);
 
                     // Save updated pool info
-                    Pools::<T>::set(_asset_id, updated_pool_info);
+                    Pools::<T>::insert(asset_id, pool_info);
 
                     // Depositing event
                     Self::deposit_event(Event::UserFullyPayedOffDebtAndPartOfBorrowed(
-                        user_id, _asset_id, _amount,
+                        user_id, asset_id, amount,
                     ));
                 }
             } else {
                 // Pay debt
-                Assets::<T>::transfer_from(&_asset_id, &user_id, &Self::account_id(), _amount);
+                Assets::<T>::transfer_from(&asset_id, &user_id, &Self::account_id(), amount);
 
                 // Update user info
-                let updated_user_info = UserInfo {
-                    lending_amount: user_info.lending_amount,
-                    lending_earnings: user_info.lending_earnings,
-                    lending_start_block: user_info.lending_start_block,
-                    borrowed_amount: user_info.borrowed_amount,
-                    acumulated_debt: user_info.acumulated_debt - _amount,
-                    collateral_amount: user_info.collateral_amount,
-                    borrow_start_block: user_info.borrow_start_block,
+                user_info = UserInfo {
+                    accumulated_debt: user_info.accumulated_debt - amount,
+                    ..user_info
                 };
 
                 // Update pool info
-                let updated_pool_info = PoolInfo {
-                    asset_id: pool_info.asset_id,
-                    balance: pool_info.balance + _amount,
-                    borrowed_rate: pool_info.borrowed_rate,
-                    lending_rate: pool_info.lending_rate,
-                    collateral_factor: pool_info.collateral_factor,
+                pool_info = PoolInfo {
+                    balance: pool_info.balance + amount,
+                    ..pool_info
                 };
 
                 // Save updated user info
-                PoolUsers::<T>::set(_asset_id, &user_id, updated_user_info);
+                PoolUsers::<T>::insert(asset_id, &user_id, user_info);
 
                 // Save updated pool info
-                Pools::<T>::set(_asset_id, updated_pool_info);
+                Pools::<T>::insert(asset_id, pool_info);
 
                 // Depositing event
-                Self::deposit_event(Event::UserPayedPartOfDebt(user_id, _asset_id, _amount));
+                Self::deposit_event(Event::UserPayedPartOfDebt(user_id, asset_id, amount));
             }
 
             Ok(().into())
@@ -826,35 +717,33 @@ pub mod pallet {
         fn check_liquidity(current_block: T::BlockNumber) -> Weight {
             let mut counter: u64 = 0;
 
-            for (asset_id, user_id, user_info) in PoolUsers::<T>::iter() {
-                let pool_info = Pools::<T>::get(asset_id);
+            for (asset_id, user_id, mut user_info) in PoolUsers::<T>::iter() {
+                let mut pool_info = Pools::<T>::get(asset_id);
 
                 // Calculate block difference
                 let block_difference: u128 =
                     (current_block - user_info.borrow_start_block).unique_saturated_into();
 
                 // Calculate current debt
-                let current_debt = (block_difference * (pool_info.borrowed_rate / 432000))
-                    * user_info.borrowed_amount;
+                let current_debt =
+                    (block_difference * pool_info.borrow_rate) * user_info.borrowed_amount;
 
                 // Calculate total debt
-                let total_debt = current_debt + user_info.acumulated_debt;
+                let total_debt = current_debt + user_info.accumulated_debt;
 
                 // Check if debt exceeds colateral
                 if total_debt >= user_info.collateral_amount {
                     // Update user info
-                    let updated_user_info = UserInfo {
-                        lending_amount: user_info.lending_amount,
-                        lending_earnings: user_info.lending_earnings,
-                        lending_start_block: user_info.lending_start_block,
+                    user_info = UserInfo {
                         borrowed_amount: 0,
-                        acumulated_debt: 0,
+                        accumulated_debt: 0,
                         collateral_amount: 0,
                         borrow_start_block: current_block,
+                        ..user_info
                     };
 
                     // Save updated user info
-                    PoolUsers::<T>::set(asset_id, user_id, updated_user_info);
+                    PoolUsers::<T>::insert(asset_id, user_id, user_info);
 
                     // Update counter
                     counter += 1;
