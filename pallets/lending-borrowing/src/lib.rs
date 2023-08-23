@@ -14,8 +14,6 @@ pub struct Pool<AssetId> {
     lending_interest: Balance,
     // Borrowing interest
     borrowing_interest: Balance,
-    // Is the pool lending tokens
-    is_lending: bool,
 }
 
 #[derive(Encode, Decode, PartialEq, Eq, Default, scale_info::TypeInfo)]
@@ -89,8 +87,8 @@ pub mod pallet {
     #[pallet::event]
     #[pallet::generate_deposit(pub(super) fn deposit_event)]
     pub enum Event<T: Config> {
-        /// Pool Created [asset, initial_pool_balance, is_lending]
-        PoolCreated(AssetIdOf<T>, Balance, bool),
+        /// Pool Created [asset, initial_pool_balance]
+        PoolCreated(AssetIdOf<T>, Balance),
         /// Assets Lended [who, asset, amount]
         AssetsLended(AccountIdOf<T>, AssetIdOf<T>, Balance),
         /// Assets Borrowed [who, asset, borrowed_amount, collateral]
@@ -99,17 +97,15 @@ pub mod pallet {
         AmountWithdrawn(AccountIdOf<T>, AssetIdOf<T>, Balance),
         /// Full Lending Amount Withdrawn [who, asset, amount]
         FullAmountWithdrawn(AccountIdOf<T>, AssetIdOf<T>, Balance, Balance),
-        /// Debt repaid in full
+        /// Debt repaid in full [who, asset, amount]
         DebtFullyRepaid(AccountIdOf<T>, AssetIdOf<T>, Balance),
-        /// Debt partially repaid
+        /// Debt partially repaid [who, asset, amount]
         DebtPartiallyRepaid(AccountIdOf<T>, AssetIdOf<T>, Balance),
     }
 
     /// Errors
     #[pallet::error]
     pub enum Error<T> {
-        /// Pool is unavailable for lending
-        LendingUnavailable,
         /// Unauthorized
         Unauthorized,
         /// Insufficient funds
@@ -124,6 +120,10 @@ pub mod pallet {
         InsufficientCollateral,
         /// Excessive amount
         ExcessiveAmount,
+        ///No debt to repay
+        NoDebtToRepay,
+        /// Repay fully or part of principal
+        RepayFullyOrPartOfPrincipal,
         /// Non-Existing user
         UserDoesNotExist,
     }
@@ -164,7 +164,6 @@ pub mod pallet {
             pool_balance: Balance,
             lending_interest: Balance,
             borrowing_interest: Balance,
-            is_lending: bool,
         ) -> DispatchResultWithPostInfo {
             let user = ensure_signed(origin)?;
 
@@ -185,14 +184,13 @@ pub mod pallet {
                 pool_balance,
                 lending_interest,
                 borrowing_interest,
-                is_lending: true,
             };
 
             // Add pool to the storage
             <PoolInfo<T>>::insert(asset_id, pool);
 
             // Emit an event
-            Self::deposit_event(Event::PoolCreated(asset_id, pool_balance, is_lending));
+            Self::deposit_event(Event::PoolCreated(asset_id, pool_balance));
 
             Ok(().into())
         }
@@ -208,33 +206,32 @@ pub mod pallet {
             lended_amount: Balance,
         ) -> DispatchResultWithPostInfo {
             let user = ensure_signed(origin)?;
-            let user_info = <UserInfo<T>>::get(&user);
-            let current_block = frame_system::Pallet::<T>::block_number();
-            let mut pool = <PoolInfo<T>>::get(&lended_token);
 
-            // Check if there is a pool available for lending
-            ensure!(pool.is_lending, Error::<T>::LendingUnavailable);
-            // Check if the lending asset is accepted by the pool
-            ensure!(pool.asset_id == lended_token, Error::<T>::InvalidAsset);
             // Check if user has enough funds to lend to the pool
             ensure!(
                 Assets::<T>::free_balance(&lended_token, &user).unwrap_or(0) >= lended_amount,
                 Error::<T>::InsufficientFunds
             );
 
-            // Add lended tokens to the pool
-            pool.pool_balance += lended_amount;
+            let mut pool = <PoolInfo<T>>::get(&lended_token);
+
+            // Check if the lending asset is accepted by the pool
+            ensure!(pool.asset_id == lended_token, Error::<T>::InvalidAsset);
+
+            let user_info = <UserInfo<T>>::get(&user);
+            let current_block = frame_system::Pallet::<T>::block_number();
 
             // Add the lended amount to existing amount (if user exists)
             // Create new user with lended amount(if user doesn't exist
             if let Some(mut user_info) = user_info {
-                user_info.lended_amount += lended_amount;
                 user_info.interest_earned += Self::calculate_interest(
                     &pool.lending_interest,
                     &user_info.lended_amount,
-                    &user_info.last_time_lended,
+                    user_info.last_time_lended,
                 );
                 user_info.last_time_lended = current_block;
+                user_info.lended_amount += lended_amount;
+                <UserInfo<T>>::insert(&user, user_info);
             } else {
                 let new_user_info = User {
                     lended_token,
@@ -245,6 +242,10 @@ pub mod pallet {
 
                 <UserInfo<T>>::insert(&user, new_user_info);
             }
+
+            // Add lended tokens to the pool
+            pool.pool_balance += lended_amount;
+            <PoolInfo<T>>::insert(lended_token, pool);
 
             // Transfer assets from user to the pool
             Assets::<T>::transfer_from(&lended_token, &user, &Self::account_id(), lended_amount)?;
@@ -267,13 +268,11 @@ pub mod pallet {
             collateral: Balance,
         ) -> DispatchResultWithPostInfo {
             let user = ensure_signed(origin)?;
-            let user_info = UserInfo::<T>::get(&user);
             let mut pool = PoolInfo::<T>::get(&borrowed_token);
-            // Check if the pool is lending
-            ensure!(pool.is_lending, Error::<T>::LendingUnavailable);
+
             // Check if there is enough tokens in pool to borrow
             ensure!(
-                pool.pool_balance < borrowed_amount,
+                pool.pool_balance > borrowed_amount,
                 Error::<T>::NotEnoughTokensInPool
             );
             // Check if the collateral right amount of tokens
@@ -287,19 +286,19 @@ pub mod pallet {
                 Error::<T>::InsufficientFunds
             );
 
-            // Deduct borrowed tokens from the pool
-            pool.pool_balance -= borrowed_amount;
+            let user_info = UserInfo::<T>::get(&user);
 
             // Check if user exists, if not, create a new user
             if let Some(mut user_info) = user_info {
-                user_info.borrowed_amount += borrowed_amount;
                 user_info.collateral += collateral;
                 user_info.debt_interest += Self::calculate_interest(
                     &pool.borrowing_interest,
                     &user_info.borrowed_amount,
-                    &user_info.last_time_borrowed,
+                    user_info.last_time_borrowed,
                 );
+                user_info.borrowed_amount += borrowed_amount;
                 user_info.last_time_borrowed = <frame_system::Pallet<T>>::block_number();
+                <UserInfo<T>>::insert(&user, user_info)
             } else {
                 let new_user_info = User {
                     borrowed_token: borrowed_token,
@@ -313,6 +312,9 @@ pub mod pallet {
                 <UserInfo<T>>::insert(&user, new_user_info);
             }
 
+            // Deduct borrowed tokens from the pool
+            pool.pool_balance -= borrowed_amount;
+            <PoolInfo<T>>::insert(borrowed_token, pool);
             // Transfer collateral from user to pool
             Assets::<T>::transfer_from(&borrowed_token, &user, &Self::account_id(), collateral)?;
 
@@ -347,22 +349,19 @@ pub mod pallet {
         ) -> DispatchResultWithPostInfo {
             let user = ensure_signed(origin)?;
             let user_info = <UserInfo<T>>::get(&user);
-            let pool_info = PoolInfo::<T>::get(&borrowed_token);
+
+            let mut pool_info = PoolInfo::<T>::get(&borrowed_token);
             let current_block = frame_system::Pallet::<T>::block_number();
             let borrowing_interest = pool_info.borrowing_interest;
 
-            // Check if borrowed is repaying the valid asset
-            ensure!(
-                pool_info.asset_id == borrowed_token,
-                Error::<T>::InvalidAsset
-            );
-
             if let Some(mut user_info) = user_info {
+                ensure!(user_info.borrowed_amount == 0, Error::<T>::NoDebtToRepay);
+
                 // Calculate the interest for the debt
                 let last_interest = Self::calculate_interest(
                     &borrowing_interest,
-                    &user_info.debt_interest,
-                    &user_info.last_time_borrowed,
+                    &user_info.borrowed_amount,
+                    user_info.last_time_borrowed,
                 );
                 // Add that interest to the interest debt
                 let debt_interest = user_info.debt_interest + last_interest;
@@ -394,9 +393,13 @@ pub mod pallet {
                     user_info.borrowed_amount = 0;
                     user_info.debt_interest = 0;
                     user_info.debt_paid = true;
+                    <UserInfo<T>>::insert(&user, user_info);
+                    // Add repaid amount to the pool
+                    pool_info.pool_balance += repay_amount;
+                    <PoolInfo<T>>::insert(&borrowed_token, pool_info);
                     // Emit an event
                     Self::deposit_event(Event::DebtFullyRepaid(user, borrowed_token, repay_amount));
-                } else {
+                } else if repay_amount < user_info.borrowed_amount {
                     // Transfer repayed amount from user to the platform
                     Assets::<T>::transfer_from(
                         &borrowed_token,
@@ -408,12 +411,18 @@ pub mod pallet {
                     user_info.borrowed_amount -= repay_amount;
                     // Set current block as the new block from which the interest will be calculated based on amount left on the platform
                     user_info.last_time_borrowed = current_block;
+                    <UserInfo<T>>::insert(&user, user_info);
+                    // Add repaid amount to the pool
+                    pool_info.pool_balance += repay_amount;
+                    <PoolInfo<T>>::insert(&borrowed_token, pool_info);
                     // Emit an event
                     Self::deposit_event(Event::DebtPartiallyRepaid(
                         user,
                         borrowed_token,
                         repay_amount,
                     ));
+                } else {
+                    return Err(Error::<T>::RepayFullyOrPartOfPrincipal.into());
                 }
             } else {
                 return Err(Error::<T>::UserDoesNotExist.into());
@@ -433,7 +442,7 @@ pub mod pallet {
         ) -> DispatchResultWithPostInfo {
             let user = ensure_signed(origin)?;
             let user_info = UserInfo::<T>::get(&user);
-            let pool_info = PoolInfo::<T>::get(&lended_token);
+            let mut pool_info = PoolInfo::<T>::get(&lended_token);
             let current_block = frame_system::Pallet::<T>::block_number();
             let lending_interest = pool_info.lending_interest;
 
@@ -454,7 +463,7 @@ pub mod pallet {
                     let last_interest = Self::calculate_interest(
                         &lending_interest,
                         &user_info.lended_amount,
-                        &user_info.last_time_lended,
+                        user_info.last_time_lended,
                     );
                     // Add that interest to the total interest earned
                     user_info.interest_earned += last_interest;
@@ -468,6 +477,9 @@ pub mod pallet {
                     // Set lended amount and interest earned on zero
                     user_info.lended_amount = 0;
                     user_info.interest_earned = 0;
+                    <UserInfo<T>>::insert(&user, &user_info);
+                    pool_info.pool_balance -= withdraw_amount;
+                    <PoolInfo<T>>::insert(&lended_token, pool_info);
                     // Emit an event
                     Self::deposit_event(Event::FullAmountWithdrawn(
                         user,
@@ -487,6 +499,10 @@ pub mod pallet {
                     user_info.lended_amount -= withdraw_amount;
                     // Set current block as the new block from which the interest will be calculated based on amount left on the platform
                     user_info.last_time_lended = current_block;
+                    <UserInfo<T>>::insert(&user, user_info);
+                    // Deduct withdrawn amount from the pool's balance
+                    pool_info.pool_balance -= withdraw_amount;
+                    <PoolInfo<T>>::insert(&lended_token, pool_info);
                     // Emit an event
                     Self::deposit_event(Event::AmountWithdrawn(
                         user,
@@ -502,21 +518,60 @@ pub mod pallet {
         }
     }
 
+    #[pallet::hooks]
+    impl<T: Config> Hooks<BlockNumberFor<T>> for Pallet<T> {
+        fn on_initialize(_now: T::BlockNumber) -> Weight {
+            let counter = Self::check_debt();
+            counter
+        }
+    }
+
     impl<T: Config> Pallet<T> {
         /// The account ID of pallet
         fn account_id() -> T::AccountId {
             PALLET_ID.into_account_truncating()
         }
 
+        /// Calculate amount of interest
         fn calculate_interest(
             interest: &Balance,
             amount: &Balance,
-            last_time: &BlockNumber<T>,
+            last_time: BlockNumber<T>,
         ) -> Balance {
             let interest_per_block = interest / 432000;
             let current_block = <frame_system::Pallet<T>>::block_number();
-            let block_difference: u128 = (current_block - *last_time).unique_saturated_into();
+            let block_difference: u128 = (current_block - last_time).unique_saturated_into();
             amount * (block_difference * interest_per_block)
+        }
+
+        /// Check if debt has surpassed collateral amount
+        fn check_debt() -> Weight {
+            let mut counter: u64 = 0;
+
+            for (account_id, mut user_info) in UserInfo::<T>::iter() {
+                let mut pool_info = PoolInfo::<T>::get(user_info.borrowed_token);
+                let debt = user_info.borrowed_amount
+                    + user_info.debt_interest
+                    + Self::calculate_interest(
+                        &pool_info.borrowing_interest,
+                        &user_info.borrowed_amount,
+                        user_info.last_time_borrowed,
+                    );
+
+                if debt > user_info.collateral {
+                    pool_info.pool_balance += user_info.collateral;
+                    user_info.borrowed_amount = 0;
+                    user_info.debt_interest = 0;
+                    user_info.collateral = 0;
+                    user_info.liquidated = true;
+                    UserInfo::<T>::insert(account_id, user_info);
+                    counter += 1;
+                }
+            }
+
+            T::DbWeight::get()
+                .reads(counter)
+                .saturating_add(T::DbWeight::get().writes(counter))
         }
     }
 }
