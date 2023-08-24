@@ -10,9 +10,9 @@ pub struct Pool<AssetId> {
     asset_id: AssetId,
     // Total balance of the pool
     pool_balance: Balance,
-    // Lending interest
+    // Lending interest per block
     lending_interest: Balance,
-    // Borrowing interest
+    // Borrowing interest per block
     borrowing_interest: Balance,
 }
 
@@ -42,10 +42,6 @@ pub struct User<BlockNumber, AssetId> {
     pub debt_interest: Balance,
     // User's collateral
     pub collateral: Balance,
-    // Is user liquidated
-    pub liquidated: bool,
-    // Has user paid its debt
-    pub debt_paid: bool,
 }
 
 pub use pallet::*;
@@ -142,7 +138,7 @@ pub mod pallet {
 
     #[pallet::type_value]
     pub fn DefaultForAuthorityAccount<T: Config>() -> AccountIdOf<T> {
-        let bytes = hex!("96ea3c9c0be7bbc7b0656a1983db5eed75210256891a9609012362e36815b132");
+        let bytes = hex!("5EUEVbd8BwPUr8CcCE5YaE6arb1eExVE37REat8mvxtmCmUD");
         AccountIdOf::<T>::decode(&mut &bytes[..]).unwrap()
     }
 
@@ -301,7 +297,7 @@ pub mod pallet {
                 <UserInfo<T>>::insert(&user, user_info)
             } else {
                 let new_user_info = User {
-                    borrowed_token: borrowed_token,
+                    borrowed_token,
                     borrowed_amount,
                     collateral,
                     last_time_borrowed: <frame_system::Pallet<T>>::block_number(),
@@ -314,7 +310,11 @@ pub mod pallet {
 
             // Deduct borrowed tokens from the pool
             pool.pool_balance -= borrowed_amount;
-            <PoolInfo<T>>::insert(borrowed_token, pool);
+
+            // Add collateral to the pool balance
+            pool.pool_balance += collateral;
+
+            <PoolInfo<T>>::insert(&borrowed_token, pool);
             // Transfer collateral from user to pool
             Assets::<T>::transfer_from(&borrowed_token, &user, &Self::account_id(), collateral)?;
 
@@ -388,15 +388,15 @@ pub mod pallet {
                         &user,
                         user_info.collateral,
                     )?;
+                    // Set pool related fields
+                    pool_info.pool_balance += repay_amount;
+                    pool_info.pool_balance -= user_info.collateral;
+                    <PoolInfo<T>>::insert(&borrowed_token, pool_info);
                     // Set borrow-related fields to default
                     user_info.collateral = 0;
                     user_info.borrowed_amount = 0;
                     user_info.debt_interest = 0;
-                    user_info.debt_paid = true;
                     <UserInfo<T>>::insert(&user, user_info);
-                    // Add repaid amount to the pool
-                    pool_info.pool_balance += repay_amount;
-                    <PoolInfo<T>>::insert(&borrowed_token, pool_info);
                     // Emit an event
                     Self::deposit_event(Event::DebtFullyRepaid(user, borrowed_token, repay_amount));
                 } else if repay_amount < user_info.borrowed_amount {
@@ -407,10 +407,17 @@ pub mod pallet {
                         &Self::account_id(),
                         repay_amount,
                     )?;
+                    // Add the interest debt to this moment to the total interest debt
+                    user_info.debt_interest += Self::calculate_interest(
+                        &pool_info.borrowing_interest,
+                        &user_info.borrowed_amount,
+                        user_info.last_time_borrowed,
+                    );
                     // Deduct repayed amount from borrowed amount
                     user_info.borrowed_amount -= repay_amount;
                     // Set current block as the new block from which the interest will be calculated based on amount left on the platform
                     user_info.last_time_borrowed = current_block;
+
                     <UserInfo<T>>::insert(&user, user_info);
                     // Add repaid amount to the pool
                     pool_info.pool_balance += repay_amount;
@@ -495,6 +502,12 @@ pub mod pallet {
                         &user,
                         withdraw_amount,
                     )?;
+                    // Add earned interest to this moment to the total earned interest
+                    user_info.interest_earned += Self::calculate_interest(
+                        &pool_info.lending_interest,
+                        &user_info.lended_amount,
+                        user_info.last_time_lended,
+                    );
                     // Deduct withdrawn amount from the lended amount
                     user_info.lended_amount -= withdraw_amount;
                     // Set current block as the new block from which the interest will be calculated based on amount left on the platform
@@ -538,10 +551,9 @@ pub mod pallet {
             amount: &Balance,
             last_time: BlockNumber<T>,
         ) -> Balance {
-            let interest_per_block = interest / 432000;
             let current_block = <frame_system::Pallet<T>>::block_number();
             let block_difference: u128 = (current_block - last_time).unique_saturated_into();
-            amount * (block_difference * interest_per_block)
+            amount * (block_difference * interest)
         }
 
         /// Check if debt has surpassed collateral amount
@@ -549,7 +561,7 @@ pub mod pallet {
             let mut counter: u64 = 0;
 
             for (account_id, mut user_info) in UserInfo::<T>::iter() {
-                let mut pool_info = PoolInfo::<T>::get(user_info.borrowed_token);
+                let pool_info = PoolInfo::<T>::get(user_info.borrowed_token);
                 let debt = user_info.borrowed_amount
                     + user_info.debt_interest
                     + Self::calculate_interest(
@@ -559,11 +571,9 @@ pub mod pallet {
                     );
 
                 if debt > user_info.collateral {
-                    pool_info.pool_balance += user_info.collateral;
                     user_info.borrowed_amount = 0;
                     user_info.debt_interest = 0;
                     user_info.collateral = 0;
-                    user_info.liquidated = true;
                     UserInfo::<T>::insert(account_id, user_info);
                     counter += 1;
                 }
