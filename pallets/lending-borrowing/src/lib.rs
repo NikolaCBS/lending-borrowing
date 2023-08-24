@@ -5,7 +5,7 @@ pub use pallet::*;
 #[frame_support::pallet]
 pub mod pallet {
     /// Pallet imports
-    use common::{AssetInfoProvider, Balance};
+    use common::{balance, AssetInfoProvider, Balance};
     use frame_support::pallet_prelude::DispatchResultWithPostInfo;
     use frame_support::pallet_prelude::*;
     use frame_support::sp_runtime::traits::AccountIdConversion;
@@ -13,6 +13,7 @@ pub mod pallet {
     use frame_support::PalletId;
     use frame_system::pallet_prelude::*;
     use hex_literal::hex;
+    use sp_runtime::generic::Block;
     use sp_runtime::traits::UniqueSaturatedInto;
     use sp_std::prelude::*;
 
@@ -32,14 +33,14 @@ pub mod pallet {
     pub struct UserInfo<BlockNumber> {
         //// Info for lending
 
-        // Amount that was lended
+        // Lending parameters
         pub lending_amount: Balance,
         // Amount earned from lending (lending_amount * interest)
         pub lending_earnings: Balance,
         // Block number from which lending_earnings is calculated
         pub lending_start_block: BlockNumber,
 
-        //// Info for borrowing
+        //// Borrowing parameters
 
         // Amount that was borrowed
         pub borrowed_amount: Balance,
@@ -57,8 +58,8 @@ pub mod pallet {
     pub struct PoolInfo<AssetId> {
         pub asset_id: AssetId, // Asset ID of token that is being used for ledning/borrowing
         pub balance: Balance,  // Pool token balance
-        pub lending_rate: Balance, // Interest rate for lending (used to calculate lending_earnings)
-        pub borrow_rate: Balance, // Interest rate for borrowing (used to calculate accumulated_debt)
+        pub lending_rate: Balance, // Interest rate for lending (accounts for the yearly bases per block)
+        pub borrow_rate: Balance, // Interest rate for borrowing (accounts for the yearly bases per block)
         pub collateral_factor: Balance, // Collateral factor (used to calculate collateral_amount)
     }
 
@@ -147,6 +148,8 @@ pub mod pallet {
         UserDoesntExist,
         /// User hasn't lended any tokens
         UserHasntLendedTokens,
+        /// User hasn't borrowed any tokens
+        UserHasntBorrowedTokens,
         /// User hasn't payed off his debts
         UserHasntPayedDebts,
         /// Pool doesn't have enough tokens
@@ -181,19 +184,24 @@ pub mod pallet {
 
             // Check if lending and borrowing rates are valid
             ensure!(
-                lending_rate > 0 && lending_rate < 100 && borrow_rate > lending_rate,
+                lending_rate > balance!(0)
+                    && lending_rate < balance!(1)
+                    && borrow_rate > lending_rate,
                 Error::<T>::InvalidRateValues
             );
 
             // Check if collateral factor is valid
-            ensure!(collateral_factor > 0, Error::<T>::InvalidCollateralFactor);
+            ensure!(
+                collateral_factor > balance!(0),
+                Error::<T>::InvalidCollateralFactor
+            );
 
             // New lending/borrowing pool structure
             let new_pool = PoolInfo {
                 asset_id: asset_id,
                 balance: 0,
-                lending_rate: lending_rate / 432000,
-                borrow_rate: borrow_rate / 432000,
+                lending_rate: lending_rate / 5256000,
+                borrow_rate: borrow_rate / 5256000,
                 collateral_factor: collateral_factor,
             };
 
@@ -213,6 +221,7 @@ pub mod pallet {
             asset_id: AssetIdOf<T>,
             amount: Balance,
         ) -> DispatchResultWithPostInfo {
+            // Get user id
             let user_id = ensure_signed(origin)?;
 
             // Check if pool exists
@@ -230,16 +239,13 @@ pub mod pallet {
             // Get pool info
             let mut pool_info = Pools::<T>::get(&asset_id);
 
-            // Get current block
-            let current_block = frame_system::Pallet::<T>::block_number();
-
             // Check if user is present
             if PoolUsers::<T>::contains_key(&asset_id, &user_id) {
                 // Get users info
                 let mut user_info = PoolUsers::<T>::get(&asset_id, &user_id);
 
-                // Calculate earnings
-                user_info = Self::calculate_debt(user_info, &pool_info);
+                // Update earnings and debt
+                Self::update_earnings_and_debt(&mut user_info, &pool_info);
 
                 // Update user info
                 user_info = UserInfo {
@@ -338,32 +344,29 @@ pub mod pallet {
                 // Get user info
                 let mut user_info = PoolUsers::<T>::get(&asset_id, &user_id);
 
-                // Calculate debt
-                user_info = Self::calculate_debt(user_info, &pool_info);
+                // Update earnings and debt
+                Self::update_earnings_and_debt(&mut user_info, &pool_info);
+
+                // Calculate collateral
+                let collateral = amount * pool_info.collateral_factor;
 
                 // Update user info
                 user_info = UserInfo {
                     borrowed_amount: user_info.borrowed_amount + amount,
-                    collateral_amount: user_info.collateral_amount
-                        + (amount * pool_info.collateral_factor),
+                    collateral_amount: user_info.collateral_amount + collateral,
                     ..user_info
                 };
 
                 // Update pool info
                 pool_info = PoolInfo {
-                    balance: pool_info.balance - amount,
+                    balance: pool_info.balance - amount + collateral,
                     ..pool_info
                 };
 
                 // Transfer tokens -> From pool to user (borrowed_amount)
                 Assets::<T>::transfer_from(&asset_id, &Self::account_id(), &user_id, amount);
                 // Transfer tokens -> From user to pool (collateral_amount)
-                Assets::<T>::transfer_from(
-                    &asset_id,
-                    &user_id,
-                    &Self::account_id(),
-                    user_info.collateral_amount,
-                );
+                Assets::<T>::transfer_from(&asset_id, &user_id, &Self::account_id(), collateral);
 
                 // Save updated user info
                 PoolUsers::<T>::insert(asset_id, &user_id, user_info);
@@ -451,16 +454,14 @@ pub mod pallet {
                 Error::<T>::UserHasntLendedTokens
             );
 
-            // Calculate debt
-            user_info = Self::calculate_debt(user_info, &pool_info);
+            // Update earnings and debt
+            Self::update_earnings_and_debt(&mut user_info, &pool_info);
 
             // Check if user payed debts
             ensure!(
                 user_info.accumulated_debt == 0,
                 Error::<T>::UserHasntPayedDebts
             );
-
-            user_info = Self::calculate_earnings(user_info, &pool_info);
 
             let withdrawal_total = user_info.lending_amount + user_info.lending_earnings;
 
@@ -537,7 +538,7 @@ pub mod pallet {
             // Check if user has borrowed tokens
             ensure!(
                 user_info.borrowed_amount > 0,
-                Error::<T>::UserHasntLendedTokens
+                Error::<T>::UserHasntBorrowedTokens
             );
 
             // Check if user has enough tokens
@@ -546,8 +547,8 @@ pub mod pallet {
                 Error::<T>::InsufficientFunds
             );
 
-            // Calculate debt
-            user_info = Self::calculate_debt(user_info, &pool_info);
+            // Update earnings and debt
+            Self::update_earnings_and_debt(&mut user_info, &pool_info);
 
             // Calculate payed debt difference
             let payed_debt_difference = amount - user_info.accumulated_debt;
@@ -589,7 +590,7 @@ pub mod pallet {
 
                     // Update pool info
                     pool_info = PoolInfo {
-                        balance: pool_info.balance + borrow_return,
+                        balance: pool_info.balance + borrow_return - user_info.collateral_amount,
                         ..pool_info
                     };
 
@@ -673,7 +674,6 @@ pub mod pallet {
         }
     }
 
-    //  Use to return the ID of the pallet
     impl<T: Config> Pallet<T> {
         fn account_id() -> T::AccountId {
             PALLET_ID.into_account_truncating()
@@ -685,19 +685,13 @@ pub mod pallet {
             for (asset_id, user_id, mut user_info) in PoolUsers::<T>::iter() {
                 let mut pool_info = Pools::<T>::get(asset_id);
 
-                // Calculate block difference
-                let block_difference: u128 =
-                    (current_block - user_info.borrow_start_block).unique_saturated_into();
-
-                // Calculate current debt
-                let current_debt =
-                    (block_difference * pool_info.borrow_rate) * user_info.borrowed_amount;
-
-                // Calculate total debt
-                let total_debt = current_debt + user_info.accumulated_debt;
+                // Update earnings and debt
+                Self::update_earnings_and_debt(&mut user_info, &pool_info);
 
                 // Check if debt exceeds colateral
-                if total_debt >= user_info.collateral_amount {
+                if user_info.accumulated_debt + user_info.borrowed_amount
+                    >= user_info.collateral_amount
+                {
                     // Update user info
                     user_info = UserInfo {
                         borrowed_amount: 0,
@@ -720,39 +714,10 @@ pub mod pallet {
                 .saturating_add(T::DbWeight::get().writes(counter))
         }
 
-        fn calculate_debt(
-            user_info: UserInfo<BlockNumber<T>>,
+        fn update_earnings_and_debt(
+            user_info: &mut UserInfo<BlockNumberFor<T>>,
             pool_info: &PoolInfo<AssetIdOf<T>>,
-        ) -> UserInfo<BlockNumber<T>> {
-            // Get current block
-            let current_block = frame_system::Pallet::<T>::block_number();
-
-            // Calculate block difference
-            let block_difference: u128 =
-                (current_block - user_info.borrow_start_block).unique_saturated_into();
-
-            // Calculate current debt
-            let current_debt =
-                (block_difference * pool_info.borrow_rate) * user_info.borrowed_amount;
-
-            // Calculate total debt
-            let total_debt = current_debt + user_info.accumulated_debt;
-
-            // Update user info
-            let user_info = UserInfo {
-                accumulated_debt: total_debt,
-                borrow_start_block: current_block,
-                ..user_info
-            };
-
-            // Return updated user info
-            user_info
-        }
-
-        fn calculate_earnings(
-            user_info: UserInfo<BlockNumber<T>>,
-            pool_info: &PoolInfo<AssetIdOf<T>>,
-        ) -> UserInfo<BlockNumber<T>> {
+        ) {
             // Get current block
             let current_block = frame_system::Pallet::<T>::block_number();
 
@@ -760,18 +725,29 @@ pub mod pallet {
             let block_difference: u128 =
                 (current_block - user_info.lending_start_block).unique_saturated_into();
 
+            // Calculate current debt
+            let current_debt =
+                (block_difference * pool_info.borrow_rate) * user_info.borrowed_amount;
+
             // Calculate earnings
             let earnings = (block_difference * pool_info.lending_rate) * user_info.lending_amount;
 
-            // Update user info
-            let user_info = UserInfo {
-                lending_earnings: user_info.lending_earnings + earnings,
-                lending_start_block: current_block,
-                ..user_info
-            };
+            // Calculate total earnings
+            let total_earnings = user_info.lending_earnings + earnings;
 
-            // Return updated user info
-            user_info
+            // Calculate total debt
+            let total_debt = current_debt + user_info.accumulated_debt;
+
+            // Update user info
+            *user_info = UserInfo {
+                lending_amount: user_info.lending_amount,
+                lending_earnings: total_earnings,
+                lending_start_block: current_block,
+                borrowed_amount: user_info.borrowed_amount,
+                accumulated_debt: total_debt,
+                collateral_amount: user_info.collateral_amount,
+                borrow_start_block: user_info.borrow_start_block,
+            };
         }
     }
 }
