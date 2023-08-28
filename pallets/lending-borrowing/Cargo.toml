@@ -23,11 +23,29 @@ sp-std = { git = "https://github.com/sora-xor/substrate.git", branch = "polkadot
 sp-core = { git = "https://github.com/sora-xor/substrate.git", branch = "polkadot-v0.9.38", default-features = false }
 sp-runtime = { git = "https://github.com/sora-xor/substrate.git", branch = "polkadot-v0.9.38", default-features = false }
 hex-literal = "0.3.1"
+pallet-timestamp = { git = "https://github.com/sora-xor/substrate.git", branch = "polkadot-v0.9.38", default-features = false }
+
 
 [dev-dependencies]
+
 assets = { path = "../assets" }
 common = { path = "../../common", features = ["test"] }
-pallet-balances = { git = "https://github.com/sora-xor/substrate.git", branch = "polkadot-v0.9.38" }
+ceres-liquidity-locker = { path = "../ceres-liquidity-locker", default-features = false }
+demeter-farming-platform = { path = "../demeter-farming-platform", default-features = false }
+currencies = { git = "https://github.com/open-web3-stack/open-runtime-module-library.git", package = "orml-currencies", default-features = false }
+dex-manager = { path = "../dex-manager", default-features = false }
+pallet-balances = { git = "https://github.com/sora-xor/substrate.git", branch = "polkadot-v0.9.38", default-features = false }
+sp-io = { git = "https://github.com/sora-xor/substrate.git", branch = "polkadot-v0.9.38", default-features = false }
+tokens = { git = "https://github.com/open-web3-stack/open-runtime-module-library.git", package = "orml-tokens", default-features = false }
+orml-traits = { git = "https://github.com/open-web3-stack/open-runtime-module-library.git", package = "orml-traits", default-features = false }
+permissions = { path = "../permissions" }
+pool-xyk = { path = "../pool-xyk", default-features = false }
+pswap-distribution = { path = "../pswap-distribution" }
+technical = { path = "../technical" }
+trading-pair = { path = "../trading-pair" }
+price-tools = { path = "../price-tools" }
+lending-borrowing = { path = ".", default-features = false }
+
 
 [features]
 default = ['std']
@@ -41,7 +59,9 @@ std = [
     "sp-core/std",
     "sp-runtime/std",
     "sp-std/std",
-    "sp-io/std"
+    "sp-io/std",
+    
+    "dex-manager/std",
 ]
 
 runtime-benchmarks = [

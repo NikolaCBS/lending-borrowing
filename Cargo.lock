@@ -6021,18 +6021,32 @@ name = "lending-borrowing"
 version = "1.0.0-dev"
 dependencies = [
  "assets",
+ "ceres-liquidity-locker",
  "common",
+ "demeter-farming-platform",
+ "dex-manager",
  "frame-benchmarking",
  "frame-support",
  "frame-system",
  "hex-literal",
+ "lending-borrowing",
+ "orml-currencies",
+ "orml-tokens",
+ "orml-traits",
  "pallet-balances",
+ "pallet-timestamp",
  "parity-scale-codec",
+ "permissions",
+ "pool-xyk",
+ "price-tools",
+ "pswap-distribution",
  "scale-info",
  "sp-core",
  "sp-io",
  "sp-runtime",
  "sp-std",
+ "technical",
+ "trading-pair",
 ]
 
 [[package]]

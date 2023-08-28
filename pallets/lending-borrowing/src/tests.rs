@@ -1,0 +1,52 @@
+mod tests {
+    use crate::mock::*;
+    use crate::{pallet, Error};
+    use common::{balance, generate_storage_instance, AssetInfoProvider, CERES_ASSET_ID};
+    use frame_support::pallet_prelude::StorageMap;
+    use frame_support::storage::types::ValueQuery;
+    use frame_support::traits::Hooks;
+    use frame_support::PalletId;
+    use frame_support::{assert_err, assert_ok, Identity};
+    use sp_runtime::traits::AccountIdConversion;
+
+    #[test]
+    fn create_pool_unathorized() {
+        let mut ext = ExtBuilder::default().build();
+        ext.execute_with(|| {
+            assert_err!(
+                LendingBorrowing::create_pool(
+                    RuntimeOrigin::signed(ALICE),
+                    CERES_ASSET_ID.into(),
+                    balance!(30),
+                    balance!(45),
+                    balance!(20),
+                ),
+                Error::<Runtime>::UnauthorizedPoolCreation
+            );
+        });
+    }
+
+    #[test]
+    fn create_pool_already_exists() {
+        let mut ext = ExtBuilder::default().build();
+        ext.execute_with(|| {
+            LendingBorrowing::create_pool(
+                RuntimeOrigin::signed(ALICE),
+                CERES_ASSET_ID.into(),
+                balance!(30),
+                balance!(45),
+                balance!(20),
+            );
+            assert_err!(
+                LendingBorrowing::create_pool(
+                    RuntimeOrigin::signed(ALICE),
+                    CERES_ASSET_ID.into(),
+                    balance!(30),
+                    balance!(45),
+                    balance!(20),
+                ),
+                Error::<Runtime>::PoolAlreadyExists
+            );
+        });
+    }
+}
