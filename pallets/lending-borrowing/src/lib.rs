@@ -1,5 +1,11 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 
+#[cfg(test)]
+mod mock;
+
+#[cfg(test)]
+mod tests;
+
 use codec::{Decode, Encode};
 use common::Balance;
 
@@ -52,9 +58,10 @@ pub mod pallet {
     // Pallet imports
     use crate::{Pool, User};
     use common::balance;
-    use common::prelude::{AssetInfoProvider, Balance};
+    use common::prelude::{AssetInfoProvider, Balance, FixedWrapper};
     use frame_support::pallet_prelude::*;
     use frame_support::sp_runtime::traits::{AccountIdConversion, UniqueSaturatedInto};
+    use frame_support::traits::Hooks;
     use frame_support::transactional;
     use frame_support::PalletId;
     use frame_system::pallet_prelude::*;
@@ -102,6 +109,8 @@ pub mod pallet {
     /// Errors
     #[pallet::error]
     pub enum Error<T> {
+        /// Pool is already created
+        PoolAlreadyCreated,
         /// Unauthorized
         Unauthorized,
         /// Insufficient funds
@@ -138,7 +147,7 @@ pub mod pallet {
 
     #[pallet::type_value]
     pub fn DefaultForAuthorityAccount<T: Config>() -> AccountIdOf<T> {
-        let bytes = hex!("5EUEVbd8BwPUr8CcCE5YaE6arb1eExVE37REat8mvxtmCmUD");
+        let bytes = hex!("96ea3c9c0be7bbc7b0656a1983db5eed75210256891a9609012362e36815b132");
         AccountIdOf::<T>::decode(&mut &bytes[..]).unwrap()
     }
 
@@ -163,6 +172,11 @@ pub mod pallet {
         ) -> DispatchResultWithPostInfo {
             let user = ensure_signed(origin)?;
 
+            // Check if pool is already created
+            if <PoolInfo<T>>::contains_key(&asset_id) {
+                return Err(Error::<T>::PoolAlreadyCreated.into());
+            }
+
             // Check if authority account is calling the function
             if user != AuthorityAccount::<T>::get() {
                 return Err(Error::<T>::Unauthorized.into());
@@ -170,7 +184,10 @@ pub mod pallet {
 
             // Check if ledning and borrowing interests are in the right proportion
             ensure!(
-                lending_interest == borrowing_interest * balance!(0.7),
+                lending_interest
+                    == (FixedWrapper::from(borrowing_interest) * FixedWrapper::from(balance!(0.7)))
+                        .try_into_balance()
+                        .unwrap_or(0),
                 Error::<T>::InvalidInterestProportion
             );
 
@@ -178,8 +195,8 @@ pub mod pallet {
             let pool = Pool {
                 asset_id,
                 pool_balance,
-                lending_interest,
-                borrowing_interest,
+                lending_interest: lending_interest / balance!(5256000),
+                borrowing_interest: borrowing_interest / balance!(5256000),
             };
 
             // Add pool to the storage
