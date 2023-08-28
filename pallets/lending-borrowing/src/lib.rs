@@ -349,7 +349,10 @@ pub mod pallet {
             // Check if user can pay collateral amount
             ensure!(
                 Assets::<T>::free_balance(&asset_id, &user_id).unwrap_or(0)
-                    >= amount * pool_info.collateral_factor,
+                    >= (FixedWrapper::from(amount)
+                        * FixedWrapper::from(pool_info.collateral_factor))
+                    .try_into_balance()
+                    .unwrap_or(0),
                 Error::<T>::InsufficientFunds
             );
 

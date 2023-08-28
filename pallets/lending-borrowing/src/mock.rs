@@ -290,8 +290,8 @@ impl Default for ExtBuilder {
                 None,
             )],
             endowed_accounts: vec![
-                (ALICE, CERES_ASSET_ID, balance!(200)),
-                (BOB, CERES_ASSET_ID, balance!(200)),
+                (ALICE, CERES_ASSET_ID, balance!(100)),
+                (BOB, CERES_ASSET_ID, balance!(500)),
             ],
         }
     }

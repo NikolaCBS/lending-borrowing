@@ -90,7 +90,7 @@ mod tests {
     }
 
     #[test]
-    fn create_pool_collateral_factor() {
+    fn create_pool_invalid_collateral_factor() {
         let mut ext = ExtBuilder::default().build();
 
         ext.execute_with(|| {
@@ -104,6 +104,21 @@ mod tests {
                 ),
                 Error::<Runtime>::InvalidCollateralFactor
             );
+        });
+    }
+
+    #[test]
+    fn create_pool_ok() {
+        let mut ext = ExtBuilder::default().build();
+
+        ext.execute_with(|| {
+            assert_ok!(LendingBorrowing::create_pool(
+                RuntimeOrigin::signed(LendingBorrowing::authority_account()),
+                CERES_ASSET_ID.into(),
+                balance!(0.3),
+                balance!(0.51),
+                balance!(0.5),
+            ));
         });
     }
 
@@ -145,6 +160,125 @@ mod tests {
                 ),
                 Error::<Runtime>::InsufficientFunds
             );
+        });
+    }
+
+    #[test]
+    fn lend_tokens_ok() {
+        let mut ext = ExtBuilder::default().build();
+
+        ext.execute_with(|| {
+            assert_ok!(LendingBorrowing::create_pool(
+                RuntimeOrigin::signed(LendingBorrowing::authority_account()),
+                CERES_ASSET_ID.into(),
+                balance!(0.3),
+                balance!(0.51),
+                balance!(0.2),
+            ));
+
+            assert_ok!(LendingBorrowing::lend_tokens(
+                RuntimeOrigin::signed(ALICE),
+                CERES_ASSET_ID.into(),
+                balance!(100)
+            ));
+        });
+    }
+
+    /// Borrowing
+    #[test]
+    fn borrow_tokens_nonexisting_pool() {
+        let mut ext = ExtBuilder::default().build();
+
+        ext.execute_with(|| {
+            assert_err!(
+                LendingBorrowing::borrow_tokens(
+                    RuntimeOrigin::signed(ALICE),
+                    CERES_ASSET_ID.into(),
+                    balance!(100)
+                ),
+                Error::<Runtime>::PoolDoesntExist
+            );
+        });
+    }
+
+    #[test]
+    fn borrow_tokens_insufficient_pool_funds() {
+        let mut ext = ExtBuilder::default().build();
+
+        ext.execute_with(|| {
+            assert_ok!(LendingBorrowing::create_pool(
+                RuntimeOrigin::signed(LendingBorrowing::authority_account()),
+                CERES_ASSET_ID.into(),
+                balance!(0.3),
+                balance!(0.51),
+                balance!(0.2),
+            ));
+
+            assert_err!(
+                LendingBorrowing::borrow_tokens(
+                    RuntimeOrigin::signed(ALICE),
+                    CERES_ASSET_ID.into(),
+                    balance!(100)
+                ),
+                Error::<Runtime>::InsufficientFundsOnPool
+            );
+        });
+    }
+
+    #[test]
+    fn borrow_tokens_insufficient_collateral() {
+        let mut ext = ExtBuilder::default().build();
+
+        ext.execute_with(|| {
+            assert_ok!(LendingBorrowing::create_pool(
+                RuntimeOrigin::signed(LendingBorrowing::authority_account()),
+                CERES_ASSET_ID.into(),
+                balance!(0.3),
+                balance!(0.51),
+                balance!(0.7),
+            ));
+
+            assert_ok!(LendingBorrowing::lend_tokens(
+                RuntimeOrigin::signed(BOB),
+                CERES_ASSET_ID.into(),
+                balance!(400)
+            ));
+
+            assert_err!(
+                LendingBorrowing::borrow_tokens(
+                    RuntimeOrigin::signed(ALICE),
+                    CERES_ASSET_ID.into(),
+                    balance!(143)
+                ),
+                Error::<Runtime>::InsufficientFunds
+            );
+        });
+    }
+
+    #[test]
+    fn borrow_tokens_ok() {
+        let mut ext = ExtBuilder::default().build();
+
+        ext.execute_with(|| {
+            assert_ok!(LendingBorrowing::create_pool(
+                RuntimeOrigin::signed(LendingBorrowing::authority_account()),
+                CERES_ASSET_ID.into(),
+                balance!(0.3),
+                balance!(0.51),
+                balance!(0.7),
+            ));
+
+            assert_ok!(LendingBorrowing::lend_tokens(
+                RuntimeOrigin::signed(BOB),
+                CERES_ASSET_ID.into(),
+                balance!(400)
+            ));
+
+            assert_ok!(LendingBorrowing::borrow_tokens(
+                RuntimeOrigin::signed(ALICE),
+                CERES_ASSET_ID.into(),
+                balance!(10)
+            ));
         });
     }
 }
