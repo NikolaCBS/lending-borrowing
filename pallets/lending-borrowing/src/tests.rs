@@ -31,13 +31,13 @@ mod tests {
         let mut ext = ExtBuilder::default().build();
 
         ext.execute_with(|| {
-            LendingBorrowing::create_pool(
+            assert_ok!(LendingBorrowing::create_pool(
                 RuntimeOrigin::signed(LendingBorrowing::authority_account()),
                 CERES_ASSET_ID.into(),
                 balance!(0.3),
                 balance!(0.45),
                 balance!(0.2),
-            );
+            ));
             assert_err!(
                 LendingBorrowing::create_pool(
                     RuntimeOrigin::signed(LendingBorrowing::authority_account()),
