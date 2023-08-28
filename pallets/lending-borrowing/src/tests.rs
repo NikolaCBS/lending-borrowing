@@ -1,7 +1,7 @@
 mod tests {
     use crate::mock::*;
     use crate::{pallet, Error};
-    use common::{balance, generate_storage_instance, AssetInfoProvider, CERES_ASSET_ID};
+    use common::{balance, generate_storage_instance, AssetInfoProvider, CERES_ASSET_ID, XOR};
     use frame_support::pallet_prelude::StorageMap;
     use frame_support::storage::types::ValueQuery;
     use frame_support::traits::Hooks;
@@ -17,9 +17,9 @@ mod tests {
                 LendingBorrowing::create_pool(
                     RuntimeOrigin::signed(ALICE),
                     CERES_ASSET_ID.into(),
-                    balance!(30),
-                    balance!(45),
-                    balance!(20),
+                    balance!(0.3),
+                    balance!(0.45),
+                    balance!(0.2),
                 ),
                 Error::<Runtime>::UnauthorizedPoolCreation
             );
@@ -29,23 +29,42 @@ mod tests {
     #[test]
     fn create_pool_already_exists() {
         let mut ext = ExtBuilder::default().build();
+
         ext.execute_with(|| {
             LendingBorrowing::create_pool(
-                RuntimeOrigin::signed(ALICE),
+                RuntimeOrigin::signed(LendingBorrowing::authority_account()),
                 CERES_ASSET_ID.into(),
-                balance!(30),
-                balance!(45),
-                balance!(20),
+                balance!(0.3),
+                balance!(0.45),
+                balance!(0.2),
             );
             assert_err!(
                 LendingBorrowing::create_pool(
-                    RuntimeOrigin::signed(ALICE),
+                    RuntimeOrigin::signed(LendingBorrowing::authority_account()),
                     CERES_ASSET_ID.into(),
-                    balance!(30),
-                    balance!(45),
-                    balance!(20),
+                    balance!(0.3),
+                    balance!(0.45),
+                    balance!(0.2),
                 ),
                 Error::<Runtime>::PoolAlreadyExists
+            );
+        });
+    }
+
+    #[test]
+    fn create_pool_invalid_lending_rate() {
+        let mut ext = ExtBuilder::default().build();
+
+        ext.execute_with(|| {
+            assert_err!(
+                LendingBorrowing::create_pool(
+                    RuntimeOrigin::signed(LendingBorrowing::authority_account()),
+                    CERES_ASSET_ID.into(),
+                    balance!(0),
+                    balance!(0.45),
+                    balance!(0.2),
+                ),
+                Error::<Runtime>::InvalidRateValues
             );
         });
     }
