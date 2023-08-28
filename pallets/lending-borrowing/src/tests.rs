@@ -35,7 +35,7 @@ mod tests {
                 RuntimeOrigin::signed(LendingBorrowing::authority_account()),
                 CERES_ASSET_ID.into(),
                 balance!(0.3),
-                balance!(0.45),
+                balance!(0.51),
                 balance!(0.2),
             ));
             assert_err!(
@@ -43,7 +43,7 @@ mod tests {
                     RuntimeOrigin::signed(LendingBorrowing::authority_account()),
                     CERES_ASSET_ID.into(),
                     balance!(0.3),
-                    balance!(0.45),
+                    balance!(0.51),
                     balance!(0.2),
                 ),
                 Error::<Runtime>::PoolAlreadyExists
@@ -62,6 +62,37 @@ mod tests {
                     CERES_ASSET_ID.into(),
                     balance!(0),
                     balance!(0.45),
+                    balance!(0.2),
+                ),
+                Error::<Runtime>::InvalidRateValues
+            );
+        });
+    }
+
+    #[test]
+    fn create_pool_invalid_borrow_rate() {
+        let mut ext = ExtBuilder::default().build();
+
+        ext.execute_with(|| {
+            assert_err!(
+                LendingBorrowing::create_pool(
+                    RuntimeOrigin::signed(LendingBorrowing::authority_account()),
+                    CERES_ASSET_ID.into(),
+                    balance!(0.3),
+                    balance!(0.2),
+                    balance!(0.2),
+                ),
+                Error::<Runtime>::InvalidRateValues
+            );
+        });
+
+        ext.execute_with(|| {
+            assert_err!(
+                LendingBorrowing::create_pool(
+                    RuntimeOrigin::signed(LendingBorrowing::authority_account()),
+                    CERES_ASSET_ID.into(),
+                    balance!(0.2),
+                    balance!(0.1),
                     balance!(0.2),
                 ),
                 Error::<Runtime>::InvalidRateValues

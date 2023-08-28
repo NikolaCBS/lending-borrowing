@@ -13,6 +13,7 @@ pub use pallet::*;
 #[frame_support::pallet]
 pub mod pallet {
     /// Pallet imports
+    use common::prelude::FixedWrapper;
     use common::{balance, AssetInfoProvider, Balance};
     use frame_support::pallet_prelude::DispatchResultWithPostInfo;
     use frame_support::pallet_prelude::*;
@@ -197,7 +198,11 @@ pub mod pallet {
             ensure!(
                 lending_rate > balance!(0)
                     && borrow_rate > lending_rate
-                    && borrow_rate >= balance!(0.70) * lending_rate,
+                    && borrow_rate
+                        >= (FixedWrapper::from(balance!(0.70)) * FixedWrapper::from(lending_rate))
+                            .try_into_balance()
+                            .unwrap_or(0)
+                            + lending_rate,
                 Error::<T>::InvalidRateValues
             );
 
