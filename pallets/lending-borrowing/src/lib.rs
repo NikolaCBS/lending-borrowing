@@ -197,12 +197,10 @@ pub mod pallet {
             // Check if lending and borrowing rates are valid
             ensure!(
                 lending_rate > balance!(0)
-                    && borrow_rate > lending_rate
                     && borrow_rate
                         >= (FixedWrapper::from(balance!(0.70)) * FixedWrapper::from(lending_rate))
                             .try_into_balance()
-                            .unwrap_or(0)
-                            + lending_rate,
+                            .unwrap_or(0),
                 Error::<T>::InvalidRateValues
             );
 
