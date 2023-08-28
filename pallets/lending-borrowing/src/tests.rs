@@ -9,6 +9,7 @@ mod tests {
     use frame_support::{assert_err, assert_ok, Identity};
     use sp_runtime::traits::AccountIdConversion;
 
+    /// Create pool tests
     #[test]
     fn create_pool_unathorized() {
         let mut ext = ExtBuilder::default().build();
@@ -38,6 +39,7 @@ mod tests {
                 balance!(0.51),
                 balance!(0.2),
             ));
+
             assert_err!(
                 LendingBorrowing::create_pool(
                     RuntimeOrigin::signed(LendingBorrowing::authority_account()),
@@ -101,6 +103,47 @@ mod tests {
                     balance!(0),
                 ),
                 Error::<Runtime>::InvalidCollateralFactor
+            );
+        });
+    }
+
+    /// Lending   
+    #[test]
+    fn lend_tokens_nonexisting_pool() {
+        let mut ext = ExtBuilder::default().build();
+
+        ext.execute_with(|| {
+            assert_err!(
+                LendingBorrowing::lend_tokens(
+                    RuntimeOrigin::signed(ALICE),
+                    CERES_ASSET_ID.into(),
+                    balance!(100)
+                ),
+                Error::<Runtime>::PoolDoesntExist
+            );
+        });
+    }
+
+    #[test]
+    fn lend_tokens_insufficient_funds() {
+        let mut ext = ExtBuilder::default().build();
+
+        ext.execute_with(|| {
+            assert_ok!(LendingBorrowing::create_pool(
+                RuntimeOrigin::signed(LendingBorrowing::authority_account()),
+                CERES_ASSET_ID.into(),
+                balance!(0.3),
+                balance!(0.51),
+                balance!(0.2),
+            ));
+
+            assert_err!(
+                LendingBorrowing::lend_tokens(
+                    RuntimeOrigin::signed(ALICE),
+                    CERES_ASSET_ID.into(),
+                    balance!(500)
+                ),
+                Error::<Runtime>::InsufficientFunds
             );
         });
     }
