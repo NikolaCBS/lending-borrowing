@@ -124,7 +124,7 @@ mod tests {
 
     /// Lending   
     #[test]
-    fn lend_tokens_nonexisting_pool() {
+    fn lend_tokens_nonexistent_pool() {
         let mut ext = ExtBuilder::default().build();
 
         ext.execute_with(|| {
@@ -181,12 +181,21 @@ mod tests {
                 CERES_ASSET_ID.into(),
                 balance!(100)
             ));
+
+            assert_eq!(
+                Assets::free_balance(
+                    &CERES_ASSET_ID.into(),
+                    &LendingBorrowing::authority_account().into()
+                )
+                .unwrap(),
+                balance!(100)
+            );
         });
     }
 
     /// Borrowing
     #[test]
-    fn borrow_tokens_nonexisting_pool() {
+    fn borrow_tokens_nonexistent_pool() {
         let mut ext = ExtBuilder::default().build();
 
         ext.execute_with(|| {
@@ -281,4 +290,48 @@ mod tests {
             ));
         });
     }
+
+    /// Return tokens
+    #[test]
+    fn return_tokens_nonexistent_pool() {
+        let mut ext = ExtBuilder::default().build();
+
+        ext.execute_with(|| {
+            assert_err!(
+                LendingBorrowing::return_tokens(
+                    RuntimeOrigin::signed(LendingBorrowing::authority_account()),
+                    CERES_ASSET_ID.into(),
+                    balance!(100),
+                ),
+                Error::<Runtime>::PoolDoesntExist
+            );
+        });
+    }
+
+    #[test]
+    fn return_tokens_nonexistent_user() {
+        let mut ext = ExtBuilder::default().build();
+
+        ext.execute_with(|| {
+            assert_ok!(LendingBorrowing::create_pool(
+                RuntimeOrigin::signed(LendingBorrowing::authority_account()),
+                CERES_ASSET_ID.into(),
+                balance!(0.3),
+                balance!(0.51),
+                balance!(0.2),
+            ));
+
+            assert_err!(
+                LendingBorrowing::return_tokens(
+                    RuntimeOrigin::signed(LendingBorrowing::authority_account()),
+                    CERES_ASSET_ID.into(),
+                    balance!(100),
+                ),
+                Error::<Runtime>::UserDoesntExist
+            );
+        });
+    }
+
+    #[test]
+    fn return_tokens_non_borrowing_user() {}
 }

@@ -365,7 +365,10 @@ pub mod pallet {
                 Self::update_earnings_and_debt(&mut user_info, &pool_info);
 
                 // Calculate collateral
-                let collateral = amount * pool_info.collateral_factor;
+                let collateral = (FixedWrapper::from(amount)
+                    * FixedWrapper::from(pool_info.collateral_factor))
+                .try_into_balance()
+                .unwrap_or(0);
 
                 // Update user info
                 user_info = UserInfo {
@@ -400,7 +403,10 @@ pub mod pallet {
                 let current_block = frame_system::Pallet::<T>::block_number();
 
                 // Calculate collateral
-                let collateral = amount * pool_info.collateral_factor;
+                let collateral = (FixedWrapper::from(amount)
+                    * FixedWrapper::from(pool_info.collateral_factor))
+                .try_into_balance()
+                .unwrap_or(0);
 
                 // Create new user
                 let user_info = UserInfo {
@@ -745,8 +751,11 @@ pub mod pallet {
 
             if user_info.borrow_start_block != Default::default() {
                 // Calculate current debt
-                let current_debt =
-                    (block_difference * pool_info.borrow_rate) * user_info.borrowed_amount;
+                let current_debt = ((FixedWrapper::from(block_difference)
+                    * FixedWrapper::from(pool_info.borrow_rate))
+                    * FixedWrapper::from(user_info.borrowed_amount))
+                .try_into_balance()
+                .unwrap_or(0);
 
                 // Calculate total debt
                 total_debt = current_debt + user_info.accumulated_debt;
@@ -754,8 +763,11 @@ pub mod pallet {
 
             if user_info.lending_start_block != Default::default() {
                 // Calculate earnings
-                let earnings =
-                    (block_difference * pool_info.lending_rate) * user_info.lending_amount;
+                let earnings = ((FixedWrapper::from(block_difference)
+                    * FixedWrapper::from(pool_info.lending_rate))
+                    * FixedWrapper::from(user_info.lending_amount))
+                .try_into_balance()
+                .unwrap_or(0);
 
                 // Calculate total earnings
                 total_earnings = user_info.lending_earnings + earnings;
