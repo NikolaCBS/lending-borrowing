@@ -115,6 +115,8 @@ pub mod pallet {
         Unauthorized,
         /// Insufficient funds
         InsufficientFunds,
+        /// Pool does not exist
+        PoolDoesNotExist,
         /// Invalid asset
         InvalidAsset,
         /// Invalid interest proportion
@@ -220,6 +222,11 @@ pub mod pallet {
         ) -> DispatchResultWithPostInfo {
             let user = ensure_signed(origin)?;
 
+            // Check if pool with this token exists
+            if !<PoolInfo<T>>::contains_key(&lended_token) {
+                return Err(Error::<T>::PoolDoesNotExist.into());
+            }
+
             // Check if user has enough funds to lend to the pool
             ensure!(
                 Assets::<T>::free_balance(&lended_token, &user).unwrap_or(0) >= lended_amount,
@@ -228,20 +235,18 @@ pub mod pallet {
 
             let mut pool = <PoolInfo<T>>::get(&lended_token);
 
-            // Check if the lending asset is accepted by the pool
-            ensure!(pool.asset_id == lended_token, Error::<T>::InvalidAsset);
-
             let user_info = <UserInfo<T>>::get(&user);
             let current_block = frame_system::Pallet::<T>::block_number();
 
             // Add the lended amount to existing amount (if user exists)
             // Create new user with lended amount(if user doesn't exist
             if let Some(mut user_info) = user_info {
-                user_info.interest_earned += Self::calculate_interest(
+                let new_interest = Self::calculate_interest(
                     &pool.lending_interest,
                     &user_info.lended_amount,
                     user_info.last_time_lended,
                 );
+                user_info.interest_earned += new_interest;
                 user_info.last_time_lended = current_block;
                 user_info.lended_amount += lended_amount;
                 <UserInfo<T>>::insert(&user, user_info);
@@ -249,7 +254,7 @@ pub mod pallet {
                 let new_user_info = User {
                     lended_token,
                     lended_amount,
-                    last_time_lended: <frame_system::Pallet<T>>::block_number(),
+                    last_time_lended: current_block,
                     ..Default::default()
                 };
 
@@ -563,16 +568,15 @@ pub mod pallet {
         }
 
         /// Calculate amount of interest
-        fn calculate_interest(
+        pub fn calculate_interest(
             interest: &Balance,
             amount: &Balance,
             last_time: BlockNumber<T>,
         ) -> Balance {
             let current_block = <frame_system::Pallet<T>>::block_number();
             let block_difference: u128 = (current_block - last_time).unique_saturated_into();
-            amount * (block_difference * interest)
+            (FixedWrapper::from(*amount) * (FixedWrapper::from(block_difference) * FixedWrapper::from(*interest))).try_into_balance().unwrap_or(0)
         }
-
         /// Check if debt has surpassed collateral amount
         fn check_debt() -> Weight {
             let mut counter: u64 = 0;

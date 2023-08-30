@@ -3,7 +3,7 @@ use common::mock::{ExistentialDeposits, GetTradingPairRestrictedFlag};
 use common::prelude::Balance;
 use common::{
     balance, fixed, AssetId32, AssetName, AssetSymbol, BalancePrecision, ContentSource,
-    Description, Fixed, CERES_ASSET_ID, PSWAP, VAL, XST,
+    Description, Fixed, CERES_ASSET_ID, PSWAP, VAL, XOR, XST,
 };
 use currencies::BasicCurrencyAdapter;
 use frame_support::traits::{Everything, GenesisBuild, Hooks};
@@ -53,6 +53,7 @@ pub type AssetId = AssetId32<common::PredefinedAssetId>;
 
 pub const ALICE: AccountId = 1;
 pub const BOB: AccountId = 2;
+pub const CHARLIE: AccountId = 3;
 pub const BUY_BACK_ACCOUNT: AccountId = 23;
 
 parameter_types! {
@@ -276,20 +277,34 @@ pub struct ExtBuilder {
 impl Default for ExtBuilder {
     fn default() -> Self {
         Self {
-            endowed_assets: vec![(
-                CERES_ASSET_ID,
-                ALICE,
-                AssetSymbol(b"CERES".to_vec()),
-                AssetName(b"Ceres".to_vec()),
-                18,
-                Balance::zero(),
-                true,
-                None,
-                None,
-            )],
+            endowed_assets: vec![
+                (
+                    CERES_ASSET_ID,
+                    ALICE,
+                    AssetSymbol(b"CERES".to_vec()),
+                    AssetName(b"Ceres".to_vec()),
+                    18,
+                    Balance::zero(),
+                    true,
+                    None,
+                    None,
+                ),
+                (
+                    XOR,
+                    ALICE,
+                    AssetSymbol(b"XOR".to_vec()),
+                    AssetName(b"Xor".to_vec()),
+                    18,
+                    Balance::zero(),
+                    true,
+                    None,
+                    None,
+                ),
+            ],
             endowed_accounts: vec![
                 (ALICE, CERES_ASSET_ID, balance!(3000)),
                 (BOB, CERES_ASSET_ID, balance!(500)),
+                (CHARLIE, XOR, balance!(1000)),
             ],
         }
     }
