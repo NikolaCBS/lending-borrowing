@@ -90,8 +90,8 @@ pub mod pallet {
     #[pallet::event]
     #[pallet::generate_deposit(pub(super) fn deposit_event)]
     pub enum Event<T: Config> {
-        /// Pool Created [asset, initial_pool_balance]
-        PoolCreated(AssetIdOf<T>, Balance),
+        /// Pool Created [asset, lending_interest, borrowing_interest]
+        PoolCreated(AssetIdOf<T>, Balance, Balance),
         /// Assets Lended [who, asset, amount]
         AssetsLended(AccountIdOf<T>, AssetIdOf<T>, Balance),
         /// Assets Borrowed [who, asset, borrowed_amount, collateral]
@@ -124,7 +124,7 @@ pub mod pallet {
         /// Insufficient funds in pool
         NotEnoughTokensInPool,
         /// Insufficient collateral
-        InsufficientCollateral,
+        InadequateCollateral,
         /// Excessive amount
         ExcessiveAmount,
         ///No debt to repay
@@ -168,7 +168,6 @@ pub mod pallet {
         pub fn create_pool(
             origin: OriginFor<T>,
             asset_id: AssetIdOf<T>,
-            pool_balance: Balance,
             lending_interest: Balance,
             borrowing_interest: Balance,
         ) -> DispatchResultWithPostInfo {
@@ -196,16 +195,26 @@ pub mod pallet {
             // Create pool
             let pool = Pool {
                 asset_id,
-                pool_balance,
-                lending_interest: lending_interest / balance!(5256000),
-                borrowing_interest: borrowing_interest / balance!(5256000),
+                pool_balance: 0,
+                lending_interest: (FixedWrapper::from(lending_interest)
+                    / FixedWrapper::from(balance!(5256000)))
+                .try_into_balance()
+                .unwrap_or(0),
+                borrowing_interest: (FixedWrapper::from(borrowing_interest)
+                    / FixedWrapper::from(balance!(5256000)))
+                .try_into_balance()
+                .unwrap_or(0),
             };
 
             // Add pool to the storage
             <PoolInfo<T>>::insert(asset_id, pool);
 
             // Emit an event
-            Self::deposit_event(Event::PoolCreated(asset_id, pool_balance));
+            Self::deposit_event(Event::PoolCreated(
+                asset_id,
+                lending_interest,
+                borrowing_interest,
+            ));
 
             Ok(().into())
         }
@@ -242,8 +251,8 @@ pub mod pallet {
             // Create new user with lended amount(if user doesn't exist
             if let Some(mut user_info) = user_info {
                 let new_interest = Self::calculate_interest(
-                    &pool.lending_interest,
-                    &user_info.lended_amount,
+                    pool.lending_interest,
+                    user_info.lended_amount,
                     user_info.last_time_lended,
                 );
                 user_info.interest_earned += new_interest;
@@ -295,8 +304,11 @@ pub mod pallet {
             );
             // Check if the collateral right amount of tokens
             ensure!(
-                borrowed_amount == collateral * balance!(0.75),
-                Error::<T>::InsufficientCollateral
+                borrowed_amount
+                    == (FixedWrapper::from(collateral) * FixedWrapper::from(balance!(0.75)))
+                        .try_into_balance()
+                        .unwrap_or(0),
+                Error::<T>::InadequateCollateral
             );
             // Check if borrower has enough tokens for collateral
             ensure!(
@@ -310,8 +322,8 @@ pub mod pallet {
             if let Some(mut user_info) = user_info {
                 user_info.collateral += collateral;
                 user_info.debt_interest += Self::calculate_interest(
-                    &pool.borrowing_interest,
-                    &user_info.borrowed_amount,
+                    pool.borrowing_interest,
+                    user_info.borrowed_amount,
                     user_info.last_time_borrowed,
                 );
                 user_info.borrowed_amount += borrowed_amount;
@@ -381,8 +393,8 @@ pub mod pallet {
 
                 // Calculate the interest for the debt
                 let last_interest = Self::calculate_interest(
-                    &borrowing_interest,
-                    &user_info.borrowed_amount,
+                    borrowing_interest,
+                    user_info.borrowed_amount,
                     user_info.last_time_borrowed,
                 );
                 // Add that interest to the interest debt
@@ -431,8 +443,8 @@ pub mod pallet {
                     )?;
                     // Add the interest debt to this moment to the total interest debt
                     user_info.debt_interest += Self::calculate_interest(
-                        &pool_info.borrowing_interest,
-                        &user_info.borrowed_amount,
+                        pool_info.borrowing_interest,
+                        user_info.borrowed_amount,
                         user_info.last_time_borrowed,
                     );
                     // Deduct repayed amount from borrowed amount
@@ -490,8 +502,8 @@ pub mod pallet {
                 if withdraw_amount == user_info.lended_amount {
                     // Calculate the interest on the amount ledned in the pool
                     let last_interest = Self::calculate_interest(
-                        &lending_interest,
-                        &user_info.lended_amount,
+                        lending_interest,
+                        user_info.lended_amount,
                         user_info.last_time_lended,
                     );
                     // Add that interest to the total interest earned
@@ -526,8 +538,8 @@ pub mod pallet {
                     )?;
                     // Add earned interest to this moment to the total earned interest
                     user_info.interest_earned += Self::calculate_interest(
-                        &pool_info.lending_interest,
-                        &user_info.lended_amount,
+                        pool_info.lending_interest,
+                        user_info.lended_amount,
                         user_info.last_time_lended,
                     );
                     // Deduct withdrawn amount from the lended amount
@@ -569,13 +581,13 @@ pub mod pallet {
 
         /// Calculate amount of interest
         pub fn calculate_interest(
-            interest: &Balance,
-            amount: &Balance,
+            interest: Balance,
+            amount: Balance,
             last_time: BlockNumber<T>,
         ) -> Balance {
             let current_block = <frame_system::Pallet<T>>::block_number();
             let block_difference: u128 = (current_block - last_time).unique_saturated_into();
-            (FixedWrapper::from(*amount) * (FixedWrapper::from(block_difference) * FixedWrapper::from(*interest))).try_into_balance().unwrap_or(0)
+            amount * (block_difference * interest)
         }
         /// Check if debt has surpassed collateral amount
         fn check_debt() -> Weight {
@@ -586,8 +598,8 @@ pub mod pallet {
                 let debt = user_info.borrowed_amount
                     + user_info.debt_interest
                     + Self::calculate_interest(
-                        &pool_info.borrowing_interest,
-                        &user_info.borrowed_amount,
+                        pool_info.borrowing_interest,
+                        user_info.borrowed_amount,
                         user_info.last_time_borrowed,
                     );
 

@@ -54,6 +54,7 @@ pub type AssetId = AssetId32<common::PredefinedAssetId>;
 pub const ALICE: AccountId = 1;
 pub const BOB: AccountId = 2;
 pub const CHARLIE: AccountId = 3;
+pub const DAVE: AccountId = 4;
 pub const BUY_BACK_ACCOUNT: AccountId = 23;
 
 parameter_types! {
@@ -304,7 +305,8 @@ impl Default for ExtBuilder {
             endowed_accounts: vec![
                 (ALICE, CERES_ASSET_ID, balance!(3000)),
                 (BOB, CERES_ASSET_ID, balance!(500)),
-                (CHARLIE, XOR, balance!(1000)),
+                (CHARLIE, XOR, balance!(1500)),
+                (DAVE, XOR, balance!(1000)),
             ],
         }
     }
