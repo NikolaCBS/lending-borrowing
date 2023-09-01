@@ -389,7 +389,7 @@ pub mod pallet {
             let borrowing_interest = pool_info.borrowing_interest;
 
             if let Some(mut user_info) = user_info {
-                ensure!(user_info.borrowed_amount == 0, Error::<T>::NoDebtToRepay);
+                ensure!(user_info.borrowed_amount > 0, Error::<T>::NoDebtToRepay);
 
                 // Calculate the interest for the debt
                 let last_interest = Self::calculate_interest(
@@ -400,7 +400,7 @@ pub mod pallet {
                 // Add that interest to the interest debt
                 let debt_interest = user_info.debt_interest + last_interest;
 
-                // Check if repay amount is less or equal to borrowed amount + interest
+                // Check if repay amount is greater than borrowed amount + interest
                 ensure!(
                     repay_amount <= user_info.borrowed_amount + debt_interest,
                     Error::<T>::ExcessiveAmount
@@ -587,7 +587,10 @@ pub mod pallet {
         ) -> Balance {
             let current_block = <frame_system::Pallet<T>>::block_number();
             let block_difference: u128 = (current_block - last_time).unique_saturated_into();
-            amount * (block_difference * interest)
+            (FixedWrapper::from(interest) * FixedWrapper::from(amount))
+                .try_into_balance()
+                .unwrap_or(0)
+                * block_difference
         }
         /// Check if debt has surpassed collateral amount
         fn check_debt() -> Weight {

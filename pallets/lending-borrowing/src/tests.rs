@@ -422,4 +422,171 @@ mod tests {
             );
         })
     }
+
+    /// Repay tests
+
+    #[test]
+    fn repay_nonexisting_user() {
+        let mut ext = ExtBuilder::default().build();
+        ext.execute_with(|| {
+            let _ = Before::create_pool();
+            assert_err!(
+                LendingBorrowing::repay(RuntimeOrigin::signed(CHARLIE), XOR, balance!(100)),
+                Error::<Runtime>::UserDoesNotExist
+            );
+        })
+    }
+
+    #[test]
+    fn repay_user_with_no_debt() {
+        let mut ext = ExtBuilder::default().build();
+        ext.execute_with(|| {
+            let _ = Before::create_pool();
+            let _ = Before::lend(CHARLIE);
+
+            let user_info = pallet::UserInfo::<Runtime>::get(&CHARLIE).unwrap();
+            assert_eq!(user_info.debt_interest, 0);
+            assert_err!(
+                LendingBorrowing::repay(RuntimeOrigin::signed(CHARLIE), XOR, balance!(0)),
+                Error::<Runtime>::NoDebtToRepay
+            );
+        })
+    }
+
+    #[test]
+    fn over_repay() {
+        let mut ext = ExtBuilder::default().build();
+        ext.execute_with(|| {
+            let _ = Before::create_pool();
+            let _ = Before::lend(CHARLIE);
+            let _ = Before::borrow(DAVE);
+            let user_info = pallet::UserInfo::<Runtime>::get(&DAVE).unwrap();
+
+            assert_err!(
+                LendingBorrowing::repay(RuntimeOrigin::signed(DAVE), XOR, balance!(100)),
+                Error::<Runtime>::ExcessiveAmount
+            );
+        })
+    }
+
+    #[test]
+    fn repay_more_than_principal_less_than_full() {
+        let mut ext = ExtBuilder::default().build();
+        ext.execute_with(|| {
+            let _ = Before::create_pool();
+            let _ = Before::lend(CHARLIE);
+            let _ = Before::borrow(DAVE);
+            let user_info = pallet::UserInfo::<Runtime>::get(&DAVE).unwrap();
+            run_to_block(100);
+
+            assert_err!(
+                LendingBorrowing::repay(RuntimeOrigin::signed(DAVE), XOR, balance!(75.00000007)),
+                Error::<Runtime>::RepayFullyOrPartOfPrincipal
+            );
+        })
+    }
+
+    #[test]
+    fn repay_full() {
+        let mut ext = ExtBuilder::default().build();
+        ext.execute_with(|| {
+            let _ = Before::create_pool();
+            let _ = Before::lend(CHARLIE);
+            let _ = Before::borrow(DAVE);
+            let user_info_before_repay = pallet::UserInfo::<Runtime>::get(&DAVE).unwrap();
+            let pool_info_before_repay = pallet::PoolInfo::<Runtime>::get(&XOR);
+            let user_balance_before_repay = Assets::free_balance(&XOR, &DAVE);
+
+            run_to_block(100);
+            let full_debt = balance!(0.000071347031962500) + balance!(75);
+
+            assert_ok!(LendingBorrowing::repay(
+                RuntimeOrigin::signed(DAVE),
+                XOR,
+                full_debt
+            ));
+
+            let user_info_after_repay = pallet::UserInfo::<Runtime>::get(&DAVE).unwrap();
+            let pool_info_after_repay = pallet::PoolInfo::<Runtime>::get(&XOR);
+            let user_balance_after_repay = Assets::free_balance(&XOR, &DAVE);
+
+            assert!(
+                pool_info_before_repay.pool_balance
+                    < pool_info_after_repay.pool_balance + user_info_before_repay.collateral
+                        - (user_info_before_repay.borrowed_amount
+                            + user_info_before_repay.debt_interest)
+            );
+
+            assert_eq!(
+                user_balance_before_repay.unwrap(),
+                user_balance_after_repay.unwrap() - user_info_before_repay.collateral + full_debt
+            );
+            assert_eq!(user_info_after_repay.borrowed_amount, 0);
+            assert_eq!(user_info_after_repay.debt_interest, 0);
+            assert_eq!(user_info_after_repay.collateral, 0);
+        })
+    }
+
+    #[test]
+    fn repay_partial() {
+        let mut ext = ExtBuilder::default().build();
+        ext.execute_with(|| {
+            let _ = Before::create_pool();
+            let _ = Before::lend(CHARLIE);
+            let _ = Before::borrow(DAVE);
+            let user_info_before_repay = pallet::UserInfo::<Runtime>::get(&DAVE).unwrap();
+            let pool_info_before_repay = pallet::PoolInfo::<Runtime>::get(&XOR);
+            let interest_before_repay = user_info_before_repay.debt_interest;
+
+            run_to_block(100);
+            let partial_debt = balance!(50);
+
+            assert_ok!(LendingBorrowing::repay(
+                RuntimeOrigin::signed(DAVE),
+                XOR,
+                partial_debt
+            ));
+
+            let user_info_after_repay = pallet::UserInfo::<Runtime>::get(&DAVE).unwrap();
+            let pool_info_after_repay = pallet::PoolInfo::<Runtime>::get(&XOR);
+            let interest_after_repay = user_info_after_repay.debt_interest;
+            let interest_calculation_after_first_repay = LendingBorrowing::calculate_interest(
+                pool_info_before_repay.borrowing_interest,
+                user_info_after_repay.borrowed_amount,
+                user_info_after_repay.last_time_borrowed,
+            );
+
+            assert_eq!(
+                pool_info_before_repay.pool_balance + partial_debt,
+                pool_info_after_repay.pool_balance
+            );
+            assert_eq!(
+                user_info_before_repay.borrowed_amount,
+                user_info_after_repay.borrowed_amount + partial_debt
+            );
+            assert_eq!(interest_before_repay, 0);
+            assert_eq!(interest_after_repay, balance!(0.000071347031962500));
+
+            run_to_block(200);
+            let _ = LendingBorrowing::repay(RuntimeOrigin::signed(DAVE), XOR, balance!(10));
+            let user_info_second_repay = pallet::UserInfo::<Runtime>::get(&DAVE).unwrap();
+
+            let interest_calculation_after_second_repay = LendingBorrowing::calculate_interest(
+                pool_info_before_repay.borrowing_interest,
+                user_info_second_repay.borrowed_amount,
+                user_info_second_repay.last_time_borrowed,
+            );
+
+            assert_ne!(
+                user_info_after_repay.borrowed_amount,
+                user_info_second_repay.borrowed_amount
+            );
+
+            assert_eq!(
+                user_info_second_repay.debt_interest,
+                user_info_after_repay.debt_interest
+                    + (user_info_second_repay.debt_interest - user_info_after_repay.debt_interest)
+            );
+        })
+    }
 }
