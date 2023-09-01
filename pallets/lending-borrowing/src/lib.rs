@@ -214,8 +214,12 @@ pub mod pallet {
             let new_pool = PoolInfo {
                 asset_id,
                 balance: 0,
-                lending_rate: lending_rate / balance!(5256000),
-                borrow_rate: borrow_rate / balance!(5256000),
+                lending_rate: (FixedWrapper::from(lending_rate) / FixedWrapper::from(5256000))
+                    .try_into_balance()
+                    .unwrap_or(0),
+                borrow_rate: (FixedWrapper::from(borrow_rate) / FixedWrapper::from(5256000))
+                    .try_into_balance()
+                    .unwrap_or(0),
                 collateral_factor: collateral_factor,
             };
 
@@ -485,7 +489,7 @@ pub mod pallet {
 
             // Check if user payed debts
             ensure!(
-                user_info.accumulated_debt == 0,
+                user_info.borrowed_amount == 0,
                 Error::<T>::UserHasntPayedDebts
             );
 
@@ -699,30 +703,28 @@ pub mod pallet {
             PALLET_ID.into_account_truncating()
         }
 
-        fn check_liquidity(current_block: T::BlockNumber) -> Weight {
+        fn check_liquidity(_current_block: T::BlockNumber) -> Weight {
             let mut counter: u64 = 0;
 
             for (asset_id, user_id, mut user_info) in PoolUsers::<T>::iter() {
-                let pool_info = Pools::<T>::get(asset_id);
+                let pool_info = <Pools<T>>::get(asset_id);
 
                 // Update earnings and debt
                 Self::update_earnings_and_debt(&mut user_info, &pool_info);
 
                 // Check if debt exceeds colateral
-                if user_info.accumulated_debt + user_info.borrowed_amount
-                    >= user_info.collateral_amount
-                {
+                if user_info.accumulated_debt >= user_info.collateral_amount {
                     // Update user info
-                    user_info = UserInfo {
+                    let new_info = UserInfo {
                         borrowed_amount: 0,
                         accumulated_debt: 0,
                         collateral_amount: 0,
-                        borrow_start_block: current_block,
+                        borrow_start_block: Default::default(),
                         ..user_info
                     };
 
                     // Save updated user info
-                    PoolUsers::<T>::insert(asset_id, user_id, user_info);
+                    <PoolUsers<T>>::insert(asset_id, user_id, new_info);
 
                     // Update counter
                     counter += 1;
@@ -734,7 +736,7 @@ pub mod pallet {
                 .saturating_add(T::DbWeight::get().writes(counter))
         }
 
-        fn update_earnings_and_debt(
+        pub fn update_earnings_and_debt(
             user_info: &mut UserInfo<BlockNumberFor<T>>,
             pool_info: &PoolInfo<AssetIdOf<T>>,
         ) {
@@ -742,8 +744,10 @@ pub mod pallet {
             let current_block = frame_system::Pallet::<T>::block_number();
 
             // Calculate block difference
-            let block_difference: u128 =
+            let block_difference_lending: u128 =
                 (current_block - user_info.lending_start_block).unique_saturated_into();
+            let block_difference_borrowing: u128 =
+                (current_block - user_info.borrow_start_block).unique_saturated_into();
 
             // Get current debt and earning
             let mut total_earnings = user_info.lending_earnings;
@@ -751,26 +755,26 @@ pub mod pallet {
 
             if user_info.borrow_start_block != Default::default() {
                 // Calculate current debt
-                let current_debt = ((FixedWrapper::from(block_difference)
+                let current_debt = ((FixedWrapper::from(block_difference_borrowing)
                     * FixedWrapper::from(pool_info.borrow_rate))
                     * FixedWrapper::from(user_info.borrowed_amount))
                 .try_into_balance()
                 .unwrap_or(0);
 
                 // Calculate total debt
-                total_debt = current_debt + user_info.accumulated_debt;
+                total_debt += current_debt;
             }
 
             if user_info.lending_start_block != Default::default() {
                 // Calculate earnings
-                let earnings = ((FixedWrapper::from(block_difference)
+                let earnings = ((FixedWrapper::from(block_difference_lending)
                     * FixedWrapper::from(pool_info.lending_rate))
                     * FixedWrapper::from(user_info.lending_amount))
                 .try_into_balance()
                 .unwrap_or(0);
 
                 // Calculate total earnings
-                total_earnings = user_info.lending_earnings + earnings;
+                total_earnings += earnings;
             }
 
             // Update user info
@@ -781,7 +785,7 @@ pub mod pallet {
                 borrowed_amount: user_info.borrowed_amount,
                 accumulated_debt: total_debt,
                 collateral_amount: user_info.collateral_amount,
-                borrow_start_block: user_info.borrow_start_block,
+                borrow_start_block: current_block,
             };
         }
     }
