@@ -713,12 +713,14 @@ pub mod pallet {
                 Self::update_earnings_and_debt(&mut user_info, &pool_info);
 
                 // Check if debt exceeds colateral
-                if user_info.accumulated_debt >= user_info.collateral_amount {
+                if FixedWrapper::from(user_info.accumulated_debt)
+                    >= FixedWrapper::from(user_info.collateral_amount)
+                {
                     // Update user info
                     let new_info = UserInfo {
-                        borrowed_amount: 0,
-                        accumulated_debt: 0,
-                        collateral_amount: 0,
+                        borrowed_amount: balance!(0),
+                        accumulated_debt: balance!(0),
+                        collateral_amount: balance!(0),
                         borrow_start_block: Default::default(),
                         ..user_info
                     };

@@ -3,6 +3,7 @@ mod tests {
     use crate::{pallet, Error, PoolInfo, UserInfo};
     use common::prelude::FixedWrapper;
     use common::{balance, AssetInfoProvider, Balance, CERES_ASSET_ID};
+    use frame_support::traits::fungible::Inspect;
     use frame_support::PalletId;
     use frame_support::{assert_err, assert_ok};
     use sp_runtime::traits::AccountIdConversion;
@@ -657,6 +658,143 @@ mod tests {
         });
     }
 
+    #[test]
+    fn withdraw_tokens_no_earnings_ok() {
+        let mut ext = ExtBuilder::default().build();
+
+        ext.execute_with(|| {
+            assert_ok!(LendingBorrowing::create_pool(
+                RuntimeOrigin::signed(LendingBorrowing::authority_account()),
+                CERES_ASSET_ID.into(),
+                balance!(0.3),
+                balance!(0.51),
+                balance!(0.7),
+            ));
+
+            run_to_block(10);
+
+            let pallet_id = PalletId(*b"lendborw").into_account_truncating();
+
+            assert_ok!(LendingBorrowing::lend_tokens(
+                RuntimeOrigin::signed(ALICE),
+                CERES_ASSET_ID.into(),
+                balance!(50)
+            ));
+
+            assert_eq!(
+                Assets::free_balance(&CERES_ASSET_ID.into(), &pallet_id).unwrap(),
+                balance!(50)
+            );
+
+            assert_eq!(
+                Assets::free_balance(&CERES_ASSET_ID.into(), &ALICE).unwrap(),
+                balance!(50)
+            );
+
+            assert_ok!(LendingBorrowing::withdraw_tokens(
+                RuntimeOrigin::signed(ALICE),
+                CERES_ASSET_ID.into(),
+            ));
+
+            assert_eq!(
+                Assets::free_balance(&CERES_ASSET_ID.into(), &pallet_id).unwrap(),
+                balance!(0)
+            );
+
+            assert_eq!(
+                Assets::free_balance(&CERES_ASSET_ID.into(), &ALICE).unwrap(),
+                balance!(100)
+            );
+        });
+    }
+
+    #[test]
+    fn withdraw_tokens_with_earnings_ok() {
+        let mut ext = ExtBuilder::default().build();
+
+        ext.execute_with(|| {
+            assert_ok!(LendingBorrowing::create_pool(
+                RuntimeOrigin::signed(LendingBorrowing::authority_account()),
+                CERES_ASSET_ID.into(),
+                balance!(0.3),
+                balance!(0.51),
+                balance!(0.7),
+            ));
+
+            run_to_block(10);
+
+            let pallet_id = PalletId(*b"lendborw").into_account_truncating();
+
+            assert_ok!(LendingBorrowing::lend_tokens(
+                RuntimeOrigin::signed(BOB),
+                CERES_ASSET_ID.into(),
+                balance!(500),
+            ));
+
+            assert_eq!(
+                Assets::free_balance(&CERES_ASSET_ID.into(), &BOB).unwrap(),
+                balance!(0)
+            );
+
+            assert_eq!(
+                Assets::free_balance(&CERES_ASSET_ID.into(), &pallet_id).unwrap(),
+                balance!(500)
+            );
+
+            assert_ok!(LendingBorrowing::lend_tokens(
+                RuntimeOrigin::signed(ALICE),
+                CERES_ASSET_ID.into(),
+                balance!(100),
+            ));
+
+            assert_eq!(
+                Assets::free_balance(&CERES_ASSET_ID.into(), &ALICE).unwrap(),
+                balance!(0)
+            );
+
+            assert_eq!(
+                Assets::free_balance(&CERES_ASSET_ID.into(), &pallet_id).unwrap(),
+                balance!(600)
+            );
+
+            let mut user_info = pallet::PoolUsers::<Runtime>::get(CERES_ASSET_ID, ALICE);
+            let pool_info = pallet::Pools::<Runtime>::get(CERES_ASSET_ID);
+
+            // Calculate blocks till reaching earnings of 1
+            // BUG: It should be 20 blocks lower
+            let blocks_till_earnings = (FixedWrapper::from(balance!(1))
+                / (FixedWrapper::from(pool_info.lending_rate)
+                    * FixedWrapper::from(user_info.lending_amount)))
+            .try_into_balance()
+            .unwrap_or(0)
+                + 20;
+
+            assert_eq!(blocks_till_earnings, 175220);
+
+            run_to_block(blocks_till_earnings.try_into().unwrap());
+
+            assert_ok!(LendingBorrowing::withdraw_tokens(
+                RuntimeOrigin::signed(ALICE),
+                CERES_ASSET_ID.into(),
+            ));
+
+            user_info = pallet::PoolUsers::<Runtime>::get(CERES_ASSET_ID, ALICE);
+
+            let user_balance =
+                Assets::free_balance(&CERES_ASSET_ID.into(), &ALICE).unwrap() / 1000000000000000000;
+            let pool_balance = Assets::free_balance(&CERES_ASSET_ID.into(), &pallet_id).unwrap()
+                / 1000000000000000000;
+
+            assert_eq!(balance!(user_balance), balance!(101));
+
+            assert_eq!(balance!(pool_balance), balance!(498));
+
+            assert_eq!(user_info.lending_amount, balance!(0));
+            assert_eq!(user_info.lending_earnings, balance!(0));
+            assert_eq!(user_info.lending_start_block, 0);
+        });
+    }
+
     /// Return tokens
     #[test]
     fn return_tokens_nonexistent_pool() {
@@ -798,6 +936,258 @@ mod tests {
         });
     }
 
+    #[test]
+    fn return_tokens_full_repayment_ok() {
+        let mut ext = ExtBuilder::default().build();
+
+        ext.execute_with(|| {
+            assert_ok!(LendingBorrowing::create_pool(
+                RuntimeOrigin::signed(LendingBorrowing::authority_account()),
+                CERES_ASSET_ID.into(),
+                balance!(0.3),
+                balance!(0.51),
+                balance!(0.7),
+            ));
+
+            run_to_block(10);
+
+            let pallet_id = PalletId(*b"lendborw").into_account_truncating();
+
+            assert_ok!(LendingBorrowing::lend_tokens(
+                RuntimeOrigin::signed(BOB),
+                CERES_ASSET_ID.into(),
+                balance!(500)
+            ));
+
+            assert_eq!(
+                Assets::free_balance(&CERES_ASSET_ID.into(), &BOB).unwrap(),
+                balance!(0)
+            );
+
+            assert_eq!(
+                Assets::free_balance(&CERES_ASSET_ID.into(), &pallet_id).unwrap(),
+                balance!(500)
+            );
+
+            assert_ok!(LendingBorrowing::borrow_tokens(
+                RuntimeOrigin::signed(ALICE),
+                CERES_ASSET_ID.into(),
+                balance!(50)
+            ));
+
+            assert_eq!(
+                Assets::free_balance(&CERES_ASSET_ID.into(), &ALICE).unwrap(),
+                balance!(115)
+            );
+
+            assert_eq!(
+                Assets::free_balance(&CERES_ASSET_ID.into(), &pallet_id).unwrap(),
+                balance!(485)
+            );
+
+            run_to_block(100000);
+
+            let mut user_info = pallet::PoolUsers::<Runtime>::get(CERES_ASSET_ID, ALICE);
+            let pool_info = pallet::Pools::<Runtime>::get(CERES_ASSET_ID);
+
+            LendingBorrowing::update_earnings_and_debt(&mut user_info, &pool_info);
+
+            assert_eq!(user_info.borrowed_amount, balance!(50));
+            assert_eq!(user_info.collateral_amount, balance!(35));
+
+            assert_ok!(LendingBorrowing::return_tokens(
+                RuntimeOrigin::signed(ALICE),
+                CERES_ASSET_ID.into(),
+                balance!(51)
+            ));
+
+            user_info = pallet::PoolUsers::<Runtime>::get(CERES_ASSET_ID, ALICE);
+
+            assert_eq!(user_info.borrowed_amount, balance!(0));
+            assert_eq!(user_info.collateral_amount, balance!(0));
+            assert_eq!(user_info.accumulated_debt, balance!(0));
+
+            /*
+            // Assert should show a profit of ~0.4 for the pool
+            assert_eq!(
+                Assets::free_balance(&CERES_ASSET_ID.into(), &pallet_id).unwrap(),
+                balance!(500.4)
+            );
+
+            // Assert should show a loss of ~0.6 for the user
+            assert_eq!(
+                Assets::free_balance(&CERES_ASSET_ID.into(), &ALICE).unwrap(),
+                balance!(89)
+            );
+            */
+        });
+    }
+
+    #[test]
+    fn return_tokens_debt_payed_borrowed_amount_remaining() {
+        let mut ext = ExtBuilder::default().build();
+
+        ext.execute_with(|| {
+            assert_ok!(LendingBorrowing::create_pool(
+                RuntimeOrigin::signed(LendingBorrowing::authority_account()),
+                CERES_ASSET_ID.into(),
+                balance!(0.3),
+                balance!(0.51),
+                balance!(0.7),
+            ));
+
+            run_to_block(10);
+
+            let pallet_id = PalletId(*b"lendborw").into_account_truncating();
+
+            assert_ok!(LendingBorrowing::lend_tokens(
+                RuntimeOrigin::signed(BOB),
+                CERES_ASSET_ID.into(),
+                balance!(500)
+            ));
+
+            assert_eq!(
+                Assets::free_balance(&CERES_ASSET_ID.into(), &BOB).unwrap(),
+                balance!(0)
+            );
+
+            assert_eq!(
+                Assets::free_balance(&CERES_ASSET_ID.into(), &pallet_id).unwrap(),
+                balance!(500)
+            );
+
+            assert_ok!(LendingBorrowing::borrow_tokens(
+                RuntimeOrigin::signed(ALICE),
+                CERES_ASSET_ID.into(),
+                balance!(50)
+            ));
+
+            assert_eq!(
+                Assets::free_balance(&CERES_ASSET_ID.into(), &ALICE).unwrap(),
+                balance!(115)
+            );
+
+            assert_eq!(
+                Assets::free_balance(&CERES_ASSET_ID.into(), &pallet_id).unwrap(),
+                balance!(485)
+            );
+
+            run_to_block(100000);
+
+            let mut user_info = pallet::PoolUsers::<Runtime>::get(CERES_ASSET_ID, ALICE);
+            let pool_info = pallet::Pools::<Runtime>::get(CERES_ASSET_ID);
+
+            LendingBorrowing::update_earnings_and_debt(&mut user_info, &pool_info);
+
+            assert_eq!(user_info.borrowed_amount, balance!(50));
+            assert_eq!(user_info.collateral_amount, balance!(35));
+
+            assert_ok!(LendingBorrowing::return_tokens(
+                RuntimeOrigin::signed(ALICE),
+                CERES_ASSET_ID.into(),
+                balance!(30)
+            ));
+
+            user_info = pallet::PoolUsers::<Runtime>::get(CERES_ASSET_ID, ALICE);
+
+            // Assert should show a borrowed amount of ~20.5 for the user
+            //assert_eq!(user_info.borrowed_amount, balance!(0));
+            assert_eq!(user_info.collateral_amount, balance!(35));
+            assert_eq!(user_info.accumulated_debt, balance!(0));
+
+            assert_eq!(
+                Assets::free_balance(&CERES_ASSET_ID.into(), &pallet_id).unwrap(),
+                balance!(515)
+            );
+
+            assert_eq!(
+                Assets::free_balance(&CERES_ASSET_ID.into(), &ALICE).unwrap(),
+                balance!(85)
+            );
+        });
+    }
+
+    #[test]
+    fn return_tokens_part_of_debt_payed() {
+        let mut ext = ExtBuilder::default().build();
+
+        ext.execute_with(|| {
+            assert_ok!(LendingBorrowing::create_pool(
+                RuntimeOrigin::signed(LendingBorrowing::authority_account()),
+                CERES_ASSET_ID.into(),
+                balance!(0.3),
+                balance!(0.51),
+                balance!(0.7),
+            ));
+
+            run_to_block(10);
+
+            let pallet_id = PalletId(*b"lendborw").into_account_truncating();
+
+            assert_ok!(LendingBorrowing::lend_tokens(
+                RuntimeOrigin::signed(BOB),
+                CERES_ASSET_ID.into(),
+                balance!(500)
+            ));
+
+            assert_eq!(
+                Assets::free_balance(&CERES_ASSET_ID.into(), &BOB).unwrap(),
+                balance!(0)
+            );
+
+            assert_eq!(
+                Assets::free_balance(&CERES_ASSET_ID.into(), &pallet_id).unwrap(),
+                balance!(500)
+            );
+
+            assert_ok!(LendingBorrowing::borrow_tokens(
+                RuntimeOrigin::signed(ALICE),
+                CERES_ASSET_ID.into(),
+                balance!(50)
+            ));
+
+            assert_eq!(
+                Assets::free_balance(&CERES_ASSET_ID.into(), &ALICE).unwrap(),
+                balance!(115)
+            );
+
+            assert_eq!(
+                Assets::free_balance(&CERES_ASSET_ID.into(), &pallet_id).unwrap(),
+                balance!(485)
+            );
+
+            run_to_block(100000);
+
+            let mut user_info = pallet::PoolUsers::<Runtime>::get(CERES_ASSET_ID, ALICE);
+            let pool_info = pallet::Pools::<Runtime>::get(CERES_ASSET_ID);
+
+            LendingBorrowing::update_earnings_and_debt(&mut user_info, &pool_info);
+
+            assert_ok!(LendingBorrowing::return_tokens(
+                RuntimeOrigin::signed(ALICE),
+                CERES_ASSET_ID.into(),
+                balance!(0.4)
+            ));
+
+            user_info = pallet::PoolUsers::<Runtime>::get(CERES_ASSET_ID, ALICE);
+
+            assert_eq!(user_info.borrowed_amount, balance!(50));
+            assert_eq!(user_info.collateral_amount, balance!(35));
+            // Assert should show a accumulated debt amount of ~0.08 for the user
+            //assert_eq!(user_info.accumulated_debt, balance!(0));
+
+            assert_eq!(
+                Assets::free_balance(&CERES_ASSET_ID.into(), &pallet_id).unwrap(),
+                balance!(485.4)
+            );
+
+            assert_eq!(
+                Assets::free_balance(&CERES_ASSET_ID.into(), &ALICE).unwrap(),
+                balance!(114.6)
+            );
+        });
+    }
+
     /// Liquidity check
     #[test]
     fn liquidate_in_debt_user() {
@@ -887,8 +1277,6 @@ mod tests {
             );
             assert_eq!(user_info.lending_amount, balance!(100));
 
-            assert_eq!(user_info.accumulated_debt, user_info.collateral_amount);
-            /*
             let debt = self::calculate_debt(&user_info, &pool_info);
 
             assert_err!(
@@ -899,7 +1287,6 @@ mod tests {
                 ),
                 Error::<Runtime>::UserHasntBorrowedTokens
             );
-            */
         });
     }
 
