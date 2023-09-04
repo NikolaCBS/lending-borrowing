@@ -129,6 +129,8 @@ pub mod pallet {
         ExcessiveAmount,
         ///No debt to repay
         NoDebtToRepay,
+        // No tokens lended
+        NoTokensLended,
         /// Repay fully or part of principal
         RepayFullyOrPartOfPrincipal,
         /// Non-Existing user
@@ -484,16 +486,17 @@ pub mod pallet {
             let user = ensure_signed(origin)?;
             let user_info = UserInfo::<T>::get(&user);
             let mut pool_info = PoolInfo::<T>::get(&lended_token);
+
+            ensure!(pool_info.asset_id == lended_token, Error::<T>::InvalidAsset);
+
             let current_block = frame_system::Pallet::<T>::block_number();
             let lending_interest = pool_info.lending_interest;
-
-            // Check if Lender is withdrawing the valid asset
-            ensure!(pool_info.asset_id == lended_token, Error::<T>::InvalidAsset);
 
             // If user withdraws whole amount lended, full interest earned will be withdrawn
             // If user withdraws partial amount lended, from this moment on, the interest will be calculated based on the amount left on the platform
             if let Some(mut user_info) = user_info {
-                // Check if amout for withdrawing is less or equal to lended amount
+                ensure!(user_info.lended_amount > 0, Error::<T>::NoTokensLended);
+
                 ensure!(
                     withdraw_amount <= user_info.lended_amount,
                     Error::<T>::ExcessiveAmount

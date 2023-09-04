@@ -460,7 +460,6 @@ mod tests {
             let _ = Before::create_pool();
             let _ = Before::lend(CHARLIE);
             let _ = Before::borrow(DAVE);
-            let user_info = pallet::UserInfo::<Runtime>::get(&DAVE).unwrap();
 
             assert_err!(
                 LendingBorrowing::repay(RuntimeOrigin::signed(DAVE), XOR, balance!(100)),
@@ -476,7 +475,6 @@ mod tests {
             let _ = Before::create_pool();
             let _ = Before::lend(CHARLIE);
             let _ = Before::borrow(DAVE);
-            let user_info = pallet::UserInfo::<Runtime>::get(&DAVE).unwrap();
             run_to_block(100);
 
             assert_err!(
@@ -550,11 +548,6 @@ mod tests {
             let user_info_after_repay = pallet::UserInfo::<Runtime>::get(&DAVE).unwrap();
             let pool_info_after_repay = pallet::PoolInfo::<Runtime>::get(&XOR);
             let interest_after_repay = user_info_after_repay.debt_interest;
-            let interest_calculation_after_first_repay = LendingBorrowing::calculate_interest(
-                pool_info_before_repay.borrowing_interest,
-                user_info_after_repay.borrowed_amount,
-                user_info_after_repay.last_time_borrowed,
-            );
 
             assert_eq!(
                 pool_info_before_repay.pool_balance + partial_debt,
@@ -571,12 +564,6 @@ mod tests {
             let _ = LendingBorrowing::repay(RuntimeOrigin::signed(DAVE), XOR, balance!(10));
             let user_info_second_repay = pallet::UserInfo::<Runtime>::get(&DAVE).unwrap();
 
-            let interest_calculation_after_second_repay = LendingBorrowing::calculate_interest(
-                pool_info_before_repay.borrowing_interest,
-                user_info_second_repay.borrowed_amount,
-                user_info_second_repay.last_time_borrowed,
-            );
-
             assert_ne!(
                 user_info_after_repay.borrowed_amount,
                 user_info_second_repay.borrowed_amount
@@ -586,6 +573,149 @@ mod tests {
                 user_info_second_repay.debt_interest,
                 user_info_after_repay.debt_interest
                     + (user_info_second_repay.debt_interest - user_info_after_repay.debt_interest)
+            );
+        })
+    }
+
+    #[test]
+    fn withdraw_invalid_asset() {
+        let mut ext = ExtBuilder::default().build();
+        ext.execute_with(|| {
+            let _ = Before::create_pool();
+            let _ = Before::lend(CHARLIE);
+            let _ = Before::borrow(DAVE);
+
+            run_to_block(50);
+
+            assert_err!(
+                LendingBorrowing::withdraw(
+                    RuntimeOrigin::signed(CHARLIE),
+                    CERES_ASSET_ID.into(),
+                    balance!(50)
+                ),
+                Error::<Runtime>::InvalidAsset
+            );
+        })
+    }
+
+    #[test]
+    fn withdraw_nonexisting_user() {
+        let mut ext = ExtBuilder::default().build();
+        ext.execute_with(|| {
+            let _ = Before::create_pool();
+            let _ = Before::lend(CHARLIE);
+            let _ = Before::borrow(DAVE);
+
+            run_to_block(50);
+
+            assert_err!(
+                LendingBorrowing::withdraw(RuntimeOrigin::signed(ALICE), XOR, balance!(50)),
+                Error::<Runtime>::UserDoesNotExist
+            );
+        })
+    }
+
+    #[test]
+    fn withdraw_no_tokens_lended() {
+        let mut ext = ExtBuilder::default().build();
+        ext.execute_with(|| {
+            let _ = Before::create_pool();
+            let _ = Before::lend(CHARLIE);
+            let _ = Before::borrow(DAVE);
+
+            run_to_block(50);
+
+            assert_err!(
+                LendingBorrowing::withdraw(RuntimeOrigin::signed(DAVE), XOR, balance!(50)),
+                Error::<Runtime>::NoTokensLended
+            );
+        })
+    }
+
+    #[test]
+    fn withdraw_more_than_lended() {
+        let mut ext = ExtBuilder::default().build();
+        ext.execute_with(|| {
+            let _ = Before::create_pool();
+            let _ = Before::lend(CHARLIE);
+            let _ = Before::borrow(DAVE);
+
+            run_to_block(50);
+
+            assert_err!(
+                LendingBorrowing::withdraw(RuntimeOrigin::signed(CHARLIE), XOR, balance!(101)),
+                Error::<Runtime>::ExcessiveAmount
+            );
+        })
+    }
+
+    #[test]
+    fn withdraw_full_amount() {
+        let mut ext = ExtBuilder::default().build();
+        ext.execute_with(|| {
+            let _ = Before::create_pool();
+            let _ = Before::lend(CHARLIE);
+            let _ = Before::borrow(DAVE);
+
+            let user_info_before_withdraw = pallet::UserInfo::<Runtime>::get(&CHARLIE).unwrap();
+            let user_balance_before_withdraw = Assets::free_balance(&XOR, &CHARLIE);
+            let pool_info_before_withdraw = pallet::PoolInfo::<Runtime>::get(&XOR);
+
+            assert_eq!(user_info_before_withdraw.lended_amount, balance!(100));
+            assert_eq!(user_info_before_withdraw.interest_earned, 0);
+            assert_eq!(user_info_before_withdraw.last_time_lended, 0);
+            assert_eq!(user_balance_before_withdraw.unwrap(), balance!(1400));
+            assert_eq!(pool_info_before_withdraw.pool_balance, balance!(125));
+
+            run_to_block(100);
+            let _ = LendingBorrowing::withdraw(RuntimeOrigin::signed(CHARLIE), XOR, balance!(100));
+
+            let user_info_after_withdraw = pallet::UserInfo::<Runtime>::get(&CHARLIE).unwrap();
+            let user_balance_after_withdraw = Assets::free_balance(&XOR, &CHARLIE);
+            let pool_info_after_withdraw = pallet::PoolInfo::<Runtime>::get(&XOR);
+
+            assert_eq!(user_info_after_withdraw.lended_amount, 0);
+            assert_eq!(user_info_after_withdraw.interest_earned, 0);
+            assert_eq!(user_info_after_withdraw.last_time_lended, 0);
+            assert_eq!(
+                user_balance_after_withdraw.unwrap(),
+                balance!(1500) + balance!(0.000066590563160000)
+            );
+            assert_eq!(pool_info_after_withdraw.pool_balance, balance!(25));
+        })
+    }
+
+    #[test]
+    fn withdraw_partial_amount() {
+        let mut ext = ExtBuilder::default().build();
+        ext.execute_with(|| {
+            let _ = Before::create_pool();
+            let _ = Before::lend(CHARLIE);
+            let _ = Before::borrow(DAVE);
+
+            let user_info_before_withdraw = pallet::UserInfo::<Runtime>::get(&CHARLIE).unwrap();
+            let user_balance_before_withdraw = Assets::free_balance(&XOR, &CHARLIE);
+            let pool_info_before_withdraw = pallet::PoolInfo::<Runtime>::get(&XOR);
+
+            run_to_block(100);
+            let _ = LendingBorrowing::withdraw(RuntimeOrigin::signed(CHARLIE), XOR, balance!(50));
+
+            let user_info_after_withdraw = pallet::UserInfo::<Runtime>::get(&CHARLIE).unwrap();
+            let user_balance_after_withdraw = Assets::free_balance(&XOR, &CHARLIE);
+            let pool_info_after_withdraw = pallet::PoolInfo::<Runtime>::get(&XOR);
+
+            assert_eq!(
+                user_balance_before_withdraw.unwrap(),
+                user_balance_after_withdraw.unwrap() - balance!(50)
+            );
+            assert_eq!(
+                user_info_after_withdraw.interest_earned,
+                balance!(0.000066590563160000)
+            );
+            assert_eq!(user_info_after_withdraw.lended_amount, balance!(50));
+            assert_eq!(
+                pool_info_after_withdraw.pool_balance,
+                pool_info_before_withdraw.pool_balance - balance!(50)
             );
         })
     }
