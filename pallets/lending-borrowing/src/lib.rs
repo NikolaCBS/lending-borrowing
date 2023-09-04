@@ -570,8 +570,8 @@ pub mod pallet {
 
     #[pallet::hooks]
     impl<T: Config> Hooks<BlockNumberFor<T>> for Pallet<T> {
-        fn on_initialize(_now: T::BlockNumber) -> Weight {
-            let counter = Self::check_debt();
+        fn on_initialize(now: T::BlockNumber) -> Weight {
+            let counter = Self::check_debt(now);
             counter
         }
     }
@@ -596,7 +596,7 @@ pub mod pallet {
                 * block_difference
         }
         /// Check if debt has surpassed collateral amount
-        fn check_debt() -> Weight {
+        fn check_debt(_current_block: T::BlockNumber) -> Weight {
             let mut counter: u64 = 0;
 
             for (account_id, mut user_info) in UserInfo::<T>::iter() {
@@ -609,7 +609,7 @@ pub mod pallet {
                         user_info.last_time_borrowed,
                     );
 
-                if debt > user_info.collateral {
+                if FixedWrapper::from(debt) > FixedWrapper::from(user_info.collateral) {
                     user_info.borrowed_amount = 0;
                     user_info.debt_interest = 0;
                     user_info.collateral = 0;

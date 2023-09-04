@@ -577,6 +577,8 @@ mod tests {
         })
     }
 
+    /// Withdraw tests
+
     #[test]
     fn withdraw_invalid_asset() {
         let mut ext = ExtBuilder::default().build();
@@ -693,7 +695,6 @@ mod tests {
             let _ = Before::lend(CHARLIE);
             let _ = Before::borrow(DAVE);
 
-            let user_info_before_withdraw = pallet::UserInfo::<Runtime>::get(&CHARLIE).unwrap();
             let user_balance_before_withdraw = Assets::free_balance(&XOR, &CHARLIE);
             let pool_info_before_withdraw = pallet::PoolInfo::<Runtime>::get(&XOR);
 
@@ -717,6 +718,35 @@ mod tests {
                 pool_info_after_withdraw.pool_balance,
                 pool_info_before_withdraw.pool_balance - balance!(50)
             );
+        })
+    }
+
+    /// Liquidate test
+
+    #[test]
+    fn liquidate_user() {
+        let mut ext = ExtBuilder::default().build();
+        ext.execute_with(|| {
+            let _ = LendingBorrowing::create_pool(
+                RuntimeOrigin::signed(LendingBorrowing::authority_account()),
+                XOR,
+                balance!(3.5),
+                balance!(5),
+            );
+            let _ = Before::lend(CHARLIE);
+            let _ = Before::borrow(DAVE); // 75 XOR borrow, 100 XOR collateral
+
+            // 5 / 5256000 = 0.00000095129375951293 (interest per block)
+            // 0.00000095129375951293 * 75 = 0.00007134703196346975 (XOR debt per block for borrow of 75 XOR)
+            // On the interest rate of 500% per year (balance!(5)), user who borrowed 75 XOR should be liquidated after
+            // 350400 blocks (25 / 0.00007134703196346975). In other words, user will be liquidated after 24 days
+            run_to_block(350401);
+
+            let user_info_after_liquidation = pallet::UserInfo::<Runtime>::get(&DAVE).unwrap();
+
+            assert_eq!(user_info_after_liquidation.debt_interest, 0);
+            assert_eq!(user_info_after_liquidation.borrowed_amount, 0);
+            assert_eq!(user_info_after_liquidation.collateral, 0);
         })
     }
 }
