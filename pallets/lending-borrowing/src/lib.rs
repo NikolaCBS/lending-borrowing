@@ -6,8 +6,12 @@ mod mock;
 #[cfg(test)]
 mod tests;
 
+mod benchmarking;
+pub mod weights;
+
 use codec::{Decode, Encode};
 use common::Balance;
+pub use weights::WeightInfo;
 
 #[derive(Encode, Decode, Default, PartialEq, Eq, scale_info::TypeInfo)]
 #[cfg_attr(feature = "std", derive(Debug))]
@@ -56,7 +60,7 @@ pub use pallet::*;
 pub mod pallet {
 
     // Pallet imports
-    use crate::{Pool, User};
+    use crate::{Pool, User, WeightInfo};
     use common::balance;
     use common::prelude::{AssetInfoProvider, Balance, FixedWrapper};
     use frame_support::pallet_prelude::*;
@@ -73,6 +77,7 @@ pub mod pallet {
     #[pallet::config]
     pub trait Config: frame_system::Config + assets::Config {
         type RuntimeEvent: From<Event<Self>> + IsType<<Self as frame_system::Config>::RuntimeEvent>;
+        type WeightInfo: WeightInfo;
     }
 
     /// Aliases
@@ -104,6 +109,8 @@ pub mod pallet {
         DebtFullyRepaid(AccountIdOf<T>, AssetIdOf<T>, Balance),
         /// Debt partially repaid [who, asset, amount]
         DebtPartiallyRepaid(AccountIdOf<T>, AssetIdOf<T>, Balance),
+        /// User liquidated [user, borrowed_amount, debt_interest, collateral]
+        UserLiquidated(AccountIdOf<T>, Balance, Balance, Balance),
     }
 
     /// Errors
@@ -166,7 +173,7 @@ pub mod pallet {
         /// Create pool
 
         #[pallet::call_index(0)]
-        #[pallet::weight(10000)]
+        #[pallet::weight(<T as Config>::WeightInfo::create_pool())]
         pub fn create_pool(
             origin: OriginFor<T>,
             asset_id: AssetIdOf<T>,
@@ -224,7 +231,7 @@ pub mod pallet {
         /// Lend tokens to the pool
 
         #[pallet::call_index(1)]
-        #[pallet::weight(10000)]
+        #[pallet::weight(<T as Config>::WeightInfo::lend())]
         #[transactional]
         pub fn lend(
             origin: OriginFor<T>,
@@ -288,7 +295,7 @@ pub mod pallet {
         /// Borrow tokens from the pool
 
         #[pallet::call_index(2)]
-        #[pallet::weight(10000)]
+        #[pallet::weight(<T as Config>::WeightInfo::borrow())]
         #[transactional]
         pub fn borrow(
             origin: OriginFor<T>,
@@ -376,7 +383,7 @@ pub mod pallet {
         /// Repay debt
 
         #[pallet::call_index(3)]
-        #[pallet::weight(10000)]
+        #[pallet::weight(<T as Config>::WeightInfo::repay())]
         #[transactional]
         pub fn repay(
             origin: OriginFor<T>,
@@ -477,7 +484,7 @@ pub mod pallet {
         /// Withdraw lended tokens
 
         #[pallet::call_index(5)]
-        #[pallet::weight(10000)]
+        #[pallet::weight(<T as Config>::WeightInfo::withdraw())]
         pub fn withdraw(
             origin: OriginFor<T>,
             lended_token: AssetIdOf<T>,
@@ -613,8 +620,15 @@ pub mod pallet {
                     user_info.borrowed_amount = 0;
                     user_info.debt_interest = 0;
                     user_info.collateral = 0;
-                    UserInfo::<T>::insert(account_id, user_info);
+                    UserInfo::<T>::insert(&account_id, &user_info);
                     counter += 1;
+
+                    Self::deposit_event(Event::UserLiquidated(
+                        account_id,
+                        user_info.borrowed_amount,
+                        user_info.debt_interest,
+                        user_info.collateral,
+                    ));
                 }
             }
 

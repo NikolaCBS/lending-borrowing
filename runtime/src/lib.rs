@@ -1992,6 +1992,11 @@ impl ceres_governance_platform::Config for Runtime {
     type WeightInfo = ceres_governance_platform::weights::SubstrateWeight<Runtime>;
 }
 
+impl lending_borrowing::Config for Runtime {
+    type RuntimeEvent = RuntimeEvent;
+    type WeightInfo = lending_borrowing::weights::SubstrateWeight<Runtime>;
+}
+
 parameter_types! {
     pub const DemeterAssetId: AssetId = common::DEMETER_ASSET_ID;
 }
@@ -2523,6 +2528,7 @@ construct_runtime! {
         Faucet: faucet::{Pallet, Call, Config<T>, Event<T>} = 80,
         #[cfg(all(feature = "private-net", feature = "wip"))] // order-book
         QATools: qa_tools::{Pallet, Call} = 112,
+        LendingBorrowing: lending_borrowing::{Pallet, Call, Storage, Event<T>} = 113,
     }
 }
 
@@ -3261,6 +3267,7 @@ impl_runtime_apis! {
             list_benchmark!(list, extra, xor_fee, XorFee);
             list_benchmark!(list, extra, referrals, Referrals);
             list_benchmark!(list, extra, ceres_staking, CeresStaking);
+            list_benchmark!(list, extra, lending_borrowing, LendingBorrowing);
             list_benchmark!(list, extra, hermes_governance_platform, HermesGovernancePlatform);
             list_benchmark!(list, extra, ceres_liquidity_locker, CeresLiquidityLockerBench::<Runtime>);
             list_benchmark!(list, extra, ceres_token_locker, CeresTokenLocker);
@@ -3348,6 +3355,7 @@ impl_runtime_apis! {
             add_benchmark!(params, batches, xor_fee, XorFee);
             add_benchmark!(params, batches, referrals, Referrals);
             add_benchmark!(params, batches, ceres_staking, CeresStaking);
+            add_benchmark!(params, batches, lending_borrowing, LendingBorrowing);
             add_benchmark!(params, batches, ceres_liquidity_locker, CeresLiquidityLockerBench::<Runtime>);
             add_benchmark!(params, batches, ceres_token_locker, CeresTokenLocker);
             add_benchmark!(params, batches, ceres_governance_platform, CeresGovernancePlatform);
