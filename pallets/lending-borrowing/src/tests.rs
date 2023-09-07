@@ -3,7 +3,6 @@ mod tests {
     use crate::{pallet, Error, PoolInfo, UserInfo};
     use common::prelude::FixedWrapper;
     use common::{balance, AssetInfoProvider, Balance, CERES_ASSET_ID};
-    use frame_support::traits::fungible::Inspect;
     use frame_support::PalletId;
     use frame_support::{assert_err, assert_ok};
     use sp_runtime::traits::AccountIdConversion;
@@ -1276,8 +1275,6 @@ mod tests {
                 blocks_till_liquidation as u64
             );
             assert_eq!(user_info.lending_amount, balance!(100));
-
-            let debt = self::calculate_debt(&user_info, &pool_info);
 
             assert_err!(
                 LendingBorrowing::return_tokens(

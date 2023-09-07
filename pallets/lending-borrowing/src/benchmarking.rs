@@ -13,6 +13,7 @@ use hex_literal::hex;
 use sp_std::prelude::*;
 
 use crate::Pallet as LendingBorrowing;
+use assets::Pallet as Assets;
 
 /// Support Functions
 
@@ -74,7 +75,6 @@ benchmarks! {
         assert_last_event::<T>(Event::<T>::PoolCreated(asset_id.into()).into());
     }
 
-    /*
     lend_tokens_new_user {
         let platform_deployer = authority::<T>();
         let asset_id = CERES_ASSET_ID;
@@ -91,6 +91,16 @@ benchmarks! {
         ).unwrap();
 
         let caller = alice::<T>();
+        let ceres_owner = assets::AssetOwners::<T>::get::<T::AssetId>(CERES_ASSET_ID.into()).unwrap();
+        let mint_amount = balance!(100);
+
+        Assets::<T>::mint(
+            RawOrigin::Signed(ceres_owner).into(),
+            CERES_ASSET_ID.into(),
+            caller.clone(),
+            mint_amount
+        ).unwrap();
+
         let lending_amount = balance!(50);
     } : {
         let _ = LendingBorrowing::<T>::lend_tokens(
@@ -119,6 +129,16 @@ benchmarks! {
         ).unwrap();
 
         let caller_alice = alice::<T>();
+        let ceres_owner = assets::AssetOwners::<T>::get::<T::AssetId>(CERES_ASSET_ID.into()).unwrap();
+        let mint_amount = balance!(100);
+
+        Assets::<T>::mint(
+            RawOrigin::Signed(ceres_owner).into(),
+            CERES_ASSET_ID.into(),
+            caller_alice.clone(),
+            mint_amount
+        ).unwrap();
+
         let alice_lending_amount = balance!(50);
 
         LendingBorrowing::<T>::lend_tokens(
@@ -144,6 +164,16 @@ benchmarks! {
         let borrow_rate = balance!(0.51);
         let collateral_factor = balance!(0.7);
 
+        let ceres_owner = assets::AssetOwners::<T>::get::<T::AssetId>(CERES_ASSET_ID.into()).unwrap();
+        let alice_mint_amount = balance!(100);
+        let bob_mint_amount = balance!(500);
+
+        let caller_alice = alice::<T>();
+        let alice_borrowed_amount = balance!(50);
+
+        let caller_bob = bob::<T>();
+        let bob_lending_amount = balance!(500);
+
         LendingBorrowing::<T>::create_pool(
             RawOrigin::Signed(platform_deployer.clone()).into(),
             asset_id.into(),
@@ -152,17 +182,25 @@ benchmarks! {
             collateral_factor,
         ).unwrap();
 
-        let caller_bob = bob::<T>();
-        let bob_lending_amount = balance!(500);
+        Assets::<T>::mint(
+            RawOrigin::Signed(ceres_owner.clone()).into(),
+            CERES_ASSET_ID.into(),
+            caller_alice.clone(),
+            alice_mint_amount
+        ).unwrap();
+
+        Assets::<T>::mint(
+            RawOrigin::Signed(ceres_owner.clone()).into(),
+            CERES_ASSET_ID.into(),
+            caller_bob.clone(),
+            bob_mint_amount
+        ).unwrap();
 
         LendingBorrowing::<T>::lend_tokens(
             RawOrigin::Signed(caller_bob.clone()).into(),
             asset_id.into(),
             bob_lending_amount,
         ).unwrap();
-
-        let caller_alice = alice::<T>();
-        let alice_borrowed_amount = balance!(50);
     } : {
         let _ = LendingBorrowing::<T>::borrow_tokens(
             RawOrigin::Signed(caller_alice.clone()).into(),
@@ -189,17 +227,35 @@ benchmarks! {
             collateral_factor,
         );
 
+        let ceres_owner = assets::AssetOwners::<T>::get::<T::AssetId>(CERES_ASSET_ID.into()).unwrap();
+        let alice_mint_amount = balance!(100);
+        let bob_mint_amount = balance!(500);
+
+        let caller_alice = alice::<T>();
+        let alice_borrowed_amount = balance!(50);
+
         let caller_bob = bob::<T>();
         let bob_lending_amount = balance!(500);
+
+        Assets::<T>::mint(
+            RawOrigin::Signed(ceres_owner.clone()).into(),
+            CERES_ASSET_ID.into(),
+            caller_alice.clone(),
+            alice_mint_amount
+        ).unwrap();
+
+        Assets::<T>::mint(
+            RawOrigin::Signed(ceres_owner.clone()).into(),
+            CERES_ASSET_ID.into(),
+            caller_bob.clone(),
+            bob_mint_amount
+        ).unwrap();
 
         let _ = LendingBorrowing::<T>::lend_tokens(
             RawOrigin::Signed(caller_bob.clone()).into(),
             asset_id.into(),
             bob_lending_amount,
         );
-
-        let caller_alice = alice::<T>();
-        let alice_borrowed_amount = balance!(50);
 
         let _ = LendingBorrowing::<T>::borrow_tokens(
             RawOrigin::Signed(caller_alice.clone()).into(),
@@ -232,8 +288,31 @@ benchmarks! {
             collateral_factor,
         );
 
+        run_to_block::<T>(10);
+
+        let ceres_owner = assets::AssetOwners::<T>::get::<T::AssetId>(CERES_ASSET_ID.into()).unwrap();
+        let alice_mint_amount = balance!(100);
+        let bob_mint_amount = balance!(500);
+
+        let caller_alice = alice::<T>();
+        let alice_lending_amount = balance!(100);
+
         let caller_bob = bob::<T>();
         let bob_lending_amount = balance!(500);
+
+        Assets::<T>::mint(
+            RawOrigin::Signed(ceres_owner.clone()).into(),
+            CERES_ASSET_ID.into(),
+            caller_alice.clone(),
+            alice_mint_amount
+        ).unwrap();
+
+        Assets::<T>::mint(
+            RawOrigin::Signed(ceres_owner.clone()).into(),
+            CERES_ASSET_ID.into(),
+            caller_bob.clone(),
+            bob_mint_amount
+        ).unwrap();
 
         let _ = LendingBorrowing::<T>::lend_tokens(
             RawOrigin::Signed(caller_bob.clone()).into(),
@@ -241,18 +320,13 @@ benchmarks! {
             bob_lending_amount,
         );
 
-        let caller_alice = alice::<T>();
-        let alice_lending_amount = balance!(100);
-
         let _ = LendingBorrowing::<T>::lend_tokens(
             RawOrigin::Signed(caller_alice.clone()).into(),
             asset_id.into(),
             alice_lending_amount,
         );
 
-        run_to_block::<T>(10000);
-
-
+        run_to_block::<T>(175220);
     } : {
         LendingBorrowing::<T>::withdraw_tokens(
             RawOrigin::Signed(caller_alice.clone()).into(),
@@ -260,9 +334,201 @@ benchmarks! {
         ).unwrap();
     }
     verify {
-        // Should calculate total earnings
-
-        assert_last_event::<T>(Event::<T>::UserWithdrewLendedTokens(caller_alice, asset_id.into(), balance!(0)).into());
+        assert_last_event::<T>(Event::<T>::UserWithdrewLendedTokens(caller_alice, asset_id.into(), balance!(101.000057077611970000)).into());
     }
-    */
+
+    return_tokens_full_repayment {
+        let platform_deployer = authority::<T>();
+        let asset_id = CERES_ASSET_ID;
+        let lending_rate = balance!(0.3);
+        let borrow_rate = balance!(0.51);
+        let collateral_factor = balance!(0.7);
+
+        let _ = LendingBorrowing::<T>::create_pool(
+            RawOrigin::Signed(platform_deployer.clone()).into(),
+            asset_id.into(),
+            lending_rate,
+            borrow_rate,
+            collateral_factor,
+        );
+
+        run_to_block::<T>(10);
+
+        let ceres_owner = assets::AssetOwners::<T>::get::<T::AssetId>(CERES_ASSET_ID.into()).unwrap();
+        let alice_mint_amount = balance!(100);
+        let bob_mint_amount = balance!(500);
+
+        let caller_alice = alice::<T>();
+        let alice_lending_amount = balance!(50);
+        let alice_return_amount = balance!(51);
+
+        let caller_bob = bob::<T>();
+        let bob_lending_amount = balance!(500);
+
+        Assets::<T>::mint(
+            RawOrigin::Signed(ceres_owner.clone()).into(),
+            CERES_ASSET_ID.into(),
+            caller_alice.clone(),
+            alice_mint_amount
+        ).unwrap();
+
+        Assets::<T>::mint(
+            RawOrigin::Signed(ceres_owner.clone()).into(),
+            CERES_ASSET_ID.into(),
+            caller_bob.clone(),
+            bob_mint_amount
+        ).unwrap();
+
+        LendingBorrowing::<T>::lend_tokens(
+            RawOrigin::Signed(caller_bob.clone()).into(),
+            asset_id.into(),
+            bob_lending_amount,
+        ).unwrap();
+
+        LendingBorrowing::<T>::borrow_tokens(
+            RawOrigin::Signed(caller_alice.clone()).into(),
+            asset_id.into(),
+            alice_lending_amount,
+        ).unwrap();
+
+        run_to_block::<T>(100000);
+    } : {
+        let _ = LendingBorrowing::<T>::return_tokens(
+            RawOrigin::Signed(caller_alice.clone()).into(),
+            asset_id.into(),
+            alice_return_amount,
+        );
+    } verify {
+        assert_last_event::<T>(Event::<T>::UserFullyReturnedBorrowedTokens(caller_alice, asset_id.into(), alice_return_amount).into());
+    }
+
+    return_tokens_full_debt_and_part_of_borrowed {
+        let platform_deployer = authority::<T>();
+        let asset_id = CERES_ASSET_ID;
+        let lending_rate = balance!(0.3);
+        let borrow_rate = balance!(0.51);
+        let collateral_factor = balance!(0.7);
+
+        let _ = LendingBorrowing::<T>::create_pool(
+            RawOrigin::Signed(platform_deployer.clone()).into(),
+            asset_id.into(),
+            lending_rate,
+            borrow_rate,
+            collateral_factor,
+        );
+
+        run_to_block::<T>(10);
+
+        let ceres_owner = assets::AssetOwners::<T>::get::<T::AssetId>(CERES_ASSET_ID.into()).unwrap();
+        let alice_mint_amount = balance!(100);
+        let bob_mint_amount = balance!(500);
+
+        let caller_alice = alice::<T>();
+        let alice_lending_amount = balance!(50);
+        let alice_return_amount = balance!(30);
+
+        let caller_bob = bob::<T>();
+        let bob_lending_amount = balance!(500);
+
+        Assets::<T>::mint(
+            RawOrigin::Signed(ceres_owner.clone()).into(),
+            CERES_ASSET_ID.into(),
+            caller_alice.clone(),
+            alice_mint_amount
+        ).unwrap();
+
+        Assets::<T>::mint(
+            RawOrigin::Signed(ceres_owner.clone()).into(),
+            CERES_ASSET_ID.into(),
+            caller_bob.clone(),
+            bob_mint_amount
+        ).unwrap();
+
+        LendingBorrowing::<T>::lend_tokens(
+            RawOrigin::Signed(caller_bob.clone()).into(),
+            asset_id.into(),
+            bob_lending_amount,
+        ).unwrap();
+
+        LendingBorrowing::<T>::borrow_tokens(
+            RawOrigin::Signed(caller_alice.clone()).into(),
+            asset_id.into(),
+            alice_lending_amount,
+        ).unwrap();
+
+        run_to_block::<T>(100000);
+    } : {
+        let _ = LendingBorrowing::<T>::return_tokens(
+            RawOrigin::Signed(caller_alice.clone()).into(),
+            asset_id.into(),
+            alice_return_amount,
+        );
+    } verify {
+        assert_last_event::<T>(Event::<T>::UserFullyPayedOffDebtAndPartOfBorrowed(caller_alice, asset_id.into(), alice_return_amount).into());
+    }
+
+    return_tokens_part_of_debt_payed {
+        let platform_deployer = authority::<T>();
+        let asset_id = CERES_ASSET_ID;
+        let lending_rate = balance!(0.3);
+        let borrow_rate = balance!(0.51);
+        let collateral_factor = balance!(0.7);
+
+        let _ = LendingBorrowing::<T>::create_pool(
+            RawOrigin::Signed(platform_deployer.clone()).into(),
+            asset_id.into(),
+            lending_rate,
+            borrow_rate,
+            collateral_factor,
+        );
+
+        run_to_block::<T>(10);
+
+        let ceres_owner = assets::AssetOwners::<T>::get::<T::AssetId>(CERES_ASSET_ID.into()).unwrap();
+        let alice_mint_amount = balance!(100);
+        let bob_mint_amount = balance!(500);
+
+        let caller_alice = alice::<T>();
+        let alice_lending_amount = balance!(50);
+        let alice_return_amount = balance!(0.4);
+
+        let caller_bob = bob::<T>();
+        let bob_lending_amount = balance!(500);
+
+        Assets::<T>::mint(
+            RawOrigin::Signed(ceres_owner.clone()).into(),
+            CERES_ASSET_ID.into(),
+            caller_alice.clone(),
+            alice_mint_amount
+        ).unwrap();
+
+        Assets::<T>::mint(
+            RawOrigin::Signed(ceres_owner.clone()).into(),
+            CERES_ASSET_ID.into(),
+            caller_bob.clone(),
+            bob_mint_amount
+        ).unwrap();
+
+        LendingBorrowing::<T>::lend_tokens(
+            RawOrigin::Signed(caller_bob.clone()).into(),
+            asset_id.into(),
+            bob_lending_amount,
+        ).unwrap();
+
+        LendingBorrowing::<T>::borrow_tokens(
+            RawOrigin::Signed(caller_alice.clone()).into(),
+            asset_id.into(),
+            alice_lending_amount,
+        ).unwrap();
+
+        run_to_block::<T>(100000);
+    } : {
+        let _ = LendingBorrowing::<T>::return_tokens(
+            RawOrigin::Signed(caller_alice.clone()).into(),
+            asset_id.into(),
+            alice_return_amount,
+        );
+    } verify {
+        assert_last_event::<T>(Event::<T>::UserPayedPartOfDebt(caller_alice, asset_id.into(), alice_return_amount).into());
+    }
 }

@@ -2,19 +2,22 @@
 // TODO #167: fix clippy warnings
 #![allow(clippy::all)]
 
-mod benchmarking;
-
 #[cfg(test)]
 mod mock;
 
 #[cfg(test)]
 mod tests;
 
+mod benchmarking;
+pub mod weights;
+
 pub use pallet::*;
+pub use weights::WeightInfo;
 
 #[frame_support::pallet]
 pub mod pallet {
     /// Pallet imports
+    use crate::WeightInfo;
     use common::prelude::FixedWrapper;
     use common::{balance, AssetInfoProvider, Balance};
     use frame_support::pallet_prelude::DispatchResultWithPostInfo;
@@ -83,6 +86,7 @@ pub mod pallet {
     #[pallet::config]
     pub trait Config: frame_system::Config + assets::Config {
         type RuntimeEvent: From<Event<Self>> + IsType<<Self as frame_system::Config>::RuntimeEvent>;
+        type WeightInfo: WeightInfo;
 
         // FROM CERESE-GOVERNANCE MOCK
         /// Ceres asset id
@@ -173,7 +177,7 @@ pub mod pallet {
     #[pallet::call]
     impl<T: Config> Pallet<T> {
         #[pallet::call_index(0)]
-        #[pallet::weight(0)]
+        #[pallet::weight(<T as Config>::WeightInfo::create_pool())]
         pub fn create_pool(
             origin: OriginFor<T>,
             asset_id: AssetIdOf<T>,
@@ -234,7 +238,7 @@ pub mod pallet {
         }
 
         #[pallet::call_index(1)]
-        #[pallet::weight(0)]
+        #[pallet::weight(<T as Config>::WeightInfo::lend_tokens_new_user())]
         pub fn lend_tokens(
             origin: OriginFor<T>,
             asset_id: AssetIdOf<T>,
@@ -328,7 +332,7 @@ pub mod pallet {
 
         #[transactional]
         #[pallet::call_index(2)]
-        #[pallet::weight(0)]
+        #[pallet::weight(<T as Config>::WeightInfo::borrow_tokens_old_user())]
         pub fn borrow_tokens(
             origin: OriginFor<T>,
             asset_id: AssetIdOf<T>,
@@ -452,7 +456,7 @@ pub mod pallet {
         }
 
         #[pallet::call_index(3)]
-        #[pallet::weight(0)]
+        #[pallet::weight(<T as Config>::WeightInfo::token_withdrawal())]
         pub fn withdraw_tokens(
             origin: OriginFor<T>,
             asset_id: AssetIdOf<T>,
@@ -534,7 +538,7 @@ pub mod pallet {
         }
 
         #[pallet::call_index(4)]
-        #[pallet::weight(0)]
+        #[pallet::weight(<T as Config>::WeightInfo::return_tokens_full_repayment())]
         pub fn return_tokens(
             origin: OriginFor<T>,
             asset_id: AssetIdOf<T>,

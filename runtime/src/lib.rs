@@ -2397,6 +2397,7 @@ impl multisig_verifier::Config for Runtime {
 impl lending_borrowing::Config for Runtime {
     type RuntimeEvent = RuntimeEvent;
     type CeresAssetId = CeresAssetId;
+    type WeightInfo = lending_borrowing::weights::SubstrateWeight<Runtime>;
 }
 
 construct_runtime! {
