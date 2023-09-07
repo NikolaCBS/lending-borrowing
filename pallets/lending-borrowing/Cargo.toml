@@ -52,6 +52,7 @@ default = ['std']
 
 std = [
     "codec/std",
+    "dex-manager/std",
     "common/std",
     "assets/std",
     "frame-support/std",
@@ -61,7 +62,6 @@ std = [
     "sp-std/std",
     "sp-io/std",
     
-    "dex-manager/std",
 ]
 
 runtime-benchmarks = [

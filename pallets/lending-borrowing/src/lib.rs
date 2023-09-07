@@ -2,6 +2,8 @@
 // TODO #167: fix clippy warnings
 #![allow(clippy::all)]
 
+mod benchmarking;
+
 #[cfg(test)]
 mod mock;
 
@@ -92,6 +94,7 @@ pub mod pallet {
     #[pallet::type_value]
     pub fn DefaultForAuthorityAccount<T: Config>() -> AccountIdOf<T> {
         let bytes = hex!("96ea3c9c0be7bbc7b0656a1983db5eed75210256891a9609012362e36815b132"); // <--- Set public key of authority account
+
         AccountIdOf::<T>::decode(&mut &bytes[..]).unwrap()
     }
 
@@ -123,14 +126,12 @@ pub mod pallet {
     #[pallet::event]
     #[pallet::generate_deposit(pub (super) fn deposit_event)]
     pub enum Event<T: Config> {
-        /// Pool created successfully [who, assetId]
+        /// Pool created successfully [assetId]
         PoolCreated(AssetIdOf<T>),
         /// User lended a specific amount of tokens [who, assetId, amount]
         UserLendedTokens(AccountIdOf<T>, AssetIdOf<T>, Balance),
         /// New user has borrowed a specific amount of tokens [who, assetId, amount]
-        NewBorrowingUser(AccountIdOf<T>, AssetIdOf<T>, Balance),
-        /// User borrowed additional tokens [who, assetId, amount]
-        UserBorrowedAdditionalTokens(AccountIdOf<T>, AssetIdOf<T>, Balance),
+        UserBorrowedTokens(AccountIdOf<T>, AssetIdOf<T>, Balance),
         /// User withdrew lended tokens [who, assetId, amount]
         UserWithdrewLendedTokens(AccountIdOf<T>, AssetIdOf<T>, Balance),
         /// User fully returned borrowed debt [who, assetId, amount]
@@ -399,9 +400,7 @@ pub mod pallet {
                 Pools::<T>::insert(asset_id, pool_info);
 
                 // Depositing event
-                Self::deposit_event(Event::UserBorrowedAdditionalTokens(
-                    user_id, asset_id, amount,
-                ))
+                Self::deposit_event(Event::UserBorrowedTokens(user_id, asset_id, amount))
             } else {
                 // Get current block
                 let current_block = frame_system::Pallet::<T>::block_number();
@@ -446,7 +445,7 @@ pub mod pallet {
                 Pools::<T>::insert(asset_id, pool_info);
 
                 // Deposit event
-                Self::deposit_event(Event::NewBorrowingUser(user_id, asset_id, amount));
+                Self::deposit_event(Event::UserBorrowedTokens(user_id, asset_id, amount));
             }
 
             Ok(().into())

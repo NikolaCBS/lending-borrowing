@@ -2396,6 +2396,7 @@ impl multisig_verifier::Config for Runtime {
 
 impl lending_borrowing::Config for Runtime {
     type RuntimeEvent = RuntimeEvent;
+    type CeresAssetId = CeresAssetId;
 }
 
 construct_runtime! {
@@ -3277,6 +3278,7 @@ impl_runtime_apis! {
             list_benchmark!(list, extra, band, Band);
             list_benchmark!(list, extra, xst, XSTPoolBench::<Runtime>);
             list_benchmark!(list, extra, oracle_proxy, OracleProxy);
+            list_benchmark!(list, extra, lending_borrowing, LendingBorrowing);
 
             #[cfg(feature = "wip")] // order-book
             list_benchmark!(list, extra, order_book, OrderBook);
@@ -3364,6 +3366,7 @@ impl_runtime_apis! {
             add_benchmark!(params, batches, xst, XSTPoolBench::<Runtime>);
             add_benchmark!(params, batches, hermes_governance_platform, HermesGovernancePlatform);
             add_benchmark!(params, batches, oracle_proxy, OracleProxy);
+            add_benchmark!(params, batches, lending_borrowing, LendingBorrowing);
 
             #[cfg(feature = "wip")] // order-book
             add_benchmark!(params, batches, order_book, OrderBook);
