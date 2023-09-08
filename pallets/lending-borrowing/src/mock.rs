@@ -104,6 +104,7 @@ parameter_types! {
 
 impl crate::Config for Runtime {
     type RuntimeEvent = RuntimeEvent;
+    type WeightInfo = ();
 }
 
 parameter_types! {

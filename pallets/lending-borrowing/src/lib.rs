@@ -158,7 +158,7 @@ pub mod pallet {
 
     #[pallet::type_value]
     pub fn DefaultForAuthorityAccount<T: Config>() -> AccountIdOf<T> {
-        let bytes = hex!("96ea3c9c0be7bbc7b0656a1983db5eed75210256891a9609012362e36815b132");
+        let bytes = hex!("6a6a3e59a8f514aa3521e23058f4571bc720d7c202ac5ced01dbac5874a10335");
         AccountIdOf::<T>::decode(&mut &bytes[..]).unwrap()
     }
 
