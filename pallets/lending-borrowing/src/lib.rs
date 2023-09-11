@@ -97,7 +97,7 @@ pub mod pallet {
     /// Defining value for authority account (can create pool)
     #[pallet::type_value]
     pub fn DefaultForAuthorityAccount<T: Config>() -> AccountIdOf<T> {
-        let bytes = hex!("96ea3c9c0be7bbc7b0656a1983db5eed75210256891a9609012362e36815b132"); // <--- Set public key of authority account
+        let bytes = hex!("383b3661977264cd2020b59f4269f56e95c12baf81887fd0103de9f6007e1615"); // <--- Set public key of authority account
 
         AccountIdOf::<T>::decode(&mut &bytes[..]).unwrap()
     }

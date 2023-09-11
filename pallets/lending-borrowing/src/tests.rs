@@ -145,9 +145,9 @@ mod tests {
                 LendingBorrowing::create_pool(
                     RuntimeOrigin::signed(ALICE),
                     CERES_ASSET_ID.into(),
-                    balance!(0.3),
-                    balance!(0.45),
-                    balance!(0.2),
+                    balance!(30),
+                    balance!(45),
+                    balance!(20),
                 ),
                 Error::<Runtime>::UnauthorizedPoolCreation
             );
@@ -244,7 +244,7 @@ mod tests {
                 CERES_ASSET_ID.into(),
                 balance!(0.3),
                 balance!(0.51),
-                balance!(0.5),
+                balance!(0.7),
             ));
 
             let pool_info = pallet::Pools::<Runtime>::get(CERES_ASSET_ID);
@@ -259,7 +259,7 @@ mod tests {
 
             assert_eq!(pool_info.lending_rate, lending_rate);
             assert_eq!(pool_info.borrow_rate, borrow_rate);
-            assert_eq!(pool_info.collateral_factor, balance!(0.5));
+            assert_eq!(pool_info.collateral_factor, balance!(0.7));
         });
     }
 

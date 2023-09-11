@@ -197,3 +197,155 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
 			.saturating_add(T::DbWeight::get().writes(4))
 	}
 }
+
+impl WeightInfo for () {
+	/// Storage: LendingBorrowing AuthorityAccount (r:1 w:0)
+	/// Proof Skipped: LendingBorrowing AuthorityAccount (max_values: Some(1), max_size: None, mode: Measured)
+	/// Storage: LendingBorrowing Pools (r:1 w:1)
+	/// Proof Skipped: LendingBorrowing Pools (max_values: None, max_size: None, mode: Measured)
+	fn create_pool() -> Weight {
+		// Proof Size summary in bytes:
+		//  Measured:  `147`
+		//  Estimated: `3264`
+		// Minimum execution time: 11_592 nanoseconds.
+		Weight::from_parts(12_203_000, 3264)
+			.saturating_add(RocksDbWeight::get().reads(2_u64))
+			.saturating_add(RocksDbWeight::get().writes(1_u64))
+	}
+	/// Storage: LendingBorrowing Pools (r:1 w:1)
+	/// Proof Skipped: LendingBorrowing Pools (max_values: None, max_size: None, mode: Measured)
+	/// Storage: Tokens Accounts (r:2 w:2)
+	/// Proof: Tokens Accounts (max_values: None, max_size: Some(136), added: 2611, mode: MaxEncodedLen)
+	/// Storage: LendingBorrowing PoolUsers (r:1 w:1)
+	/// Proof Skipped: LendingBorrowing PoolUsers (max_values: None, max_size: None, mode: Measured)
+	/// Storage: System Account (r:2 w:1)
+	/// Proof: System Account (max_values: None, max_size: Some(128), added: 2603, mode: MaxEncodedLen)
+	fn lend_tokens_new_user() -> Weight {
+		// Proof Size summary in bytes:
+		//  Measured:  `1025`
+		//  Estimated: `17428`
+		// Minimum execution time: 51_246 nanoseconds.
+		Weight::from_parts(52_799_000, 17428)
+			.saturating_add(RocksDbWeight::get().reads(6_u64))
+			.saturating_add(RocksDbWeight::get().writes(5_u64))
+	}
+	/// Storage: LendingBorrowing Pools (r:1 w:1)
+	/// Proof Skipped: LendingBorrowing Pools (max_values: None, max_size: None, mode: Measured)
+	/// Storage: Tokens Accounts (r:2 w:2)
+	/// Proof: Tokens Accounts (max_values: None, max_size: Some(136), added: 2611, mode: MaxEncodedLen)
+	/// Storage: LendingBorrowing PoolUsers (r:1 w:1)
+	/// Proof Skipped: LendingBorrowing PoolUsers (max_values: None, max_size: None, mode: Measured)
+	/// Storage: System Account (r:1 w:0)
+	/// Proof: System Account (max_values: None, max_size: Some(128), added: 2603, mode: MaxEncodedLen)
+	fn lend_tokens_old_user() -> Weight {
+		// Proof Size summary in bytes:
+		//  Measured:  `1374`
+		//  Estimated: `15523`
+		// Minimum execution time: 46_878 nanoseconds.
+		Weight::from_parts(48_211_000, 15523)
+			.saturating_add(RocksDbWeight::get().reads(5_u64))
+			.saturating_add(RocksDbWeight::get().writes(4_u64))
+	}
+	/// Storage: LendingBorrowing Pools (r:1 w:1)
+	/// Proof Skipped: LendingBorrowing Pools (max_values: None, max_size: None, mode: Measured)
+	/// Storage: Tokens Accounts (r:2 w:2)
+	/// Proof: Tokens Accounts (max_values: None, max_size: Some(136), added: 2611, mode: MaxEncodedLen)
+	/// Storage: LendingBorrowing PoolUsers (r:1 w:1)
+	/// Proof Skipped: LendingBorrowing PoolUsers (max_values: None, max_size: None, mode: Measured)
+	/// Storage: System Account (r:2 w:0)
+	/// Proof: System Account (max_values: None, max_size: Some(128), added: 2603, mode: MaxEncodedLen)
+	fn borrow_tokens_new_user() -> Weight {
+		// Proof Size summary in bytes:
+		//  Measured:  `1522`
+		//  Estimated: `18422`
+		// Minimum execution time: 64_421 nanoseconds.
+		Weight::from_parts(65_473_000, 18422)
+			.saturating_add(RocksDbWeight::get().reads(6_u64))
+			.saturating_add(RocksDbWeight::get().writes(4_u64))
+	}
+	/// Storage: LendingBorrowing Pools (r:1 w:1)
+	/// Proof Skipped: LendingBorrowing Pools (max_values: None, max_size: None, mode: Measured)
+	/// Storage: Tokens Accounts (r:2 w:2)
+	/// Proof: Tokens Accounts (max_values: None, max_size: Some(136), added: 2611, mode: MaxEncodedLen)
+	/// Storage: LendingBorrowing PoolUsers (r:1 w:1)
+	/// Proof Skipped: LendingBorrowing PoolUsers (max_values: None, max_size: None, mode: Measured)
+	/// Storage: System Account (r:2 w:0)
+	/// Proof: System Account (max_values: None, max_size: Some(128), added: 2603, mode: MaxEncodedLen)
+	fn borrow_tokens_old_user() -> Weight {
+		// Proof Size summary in bytes:
+		//  Measured:  `1653`
+		//  Estimated: `18684`
+		// Minimum execution time: 67_296 nanoseconds.
+		Weight::from_parts(69_180_000, 18684)
+			.saturating_add(RocksDbWeight::get().reads(6_u64))
+			.saturating_add(RocksDbWeight::get().writes(4_u64))
+	}
+	/// Storage: LendingBorrowing Pools (r:1 w:1)
+	/// Proof Skipped: LendingBorrowing Pools (max_values: None, max_size: None, mode: Measured)
+	/// Storage: LendingBorrowing PoolUsers (r:1 w:1)
+	/// Proof Skipped: LendingBorrowing PoolUsers (max_values: None, max_size: None, mode: Measured)
+	/// Storage: Tokens Accounts (r:2 w:2)
+	/// Proof: Tokens Accounts (max_values: None, max_size: Some(136), added: 2611, mode: MaxEncodedLen)
+	/// Storage: System Account (r:1 w:0)
+	/// Proof: System Account (max_values: None, max_size: Some(128), added: 2603, mode: MaxEncodedLen)
+	fn token_withdrawal() -> Weight {
+		// Proof Size summary in bytes:
+		//  Measured:  `1443`
+		//  Estimated: `15661`
+		// Minimum execution time: 72_315 nanoseconds.
+		Weight::from_parts(77_065_000, 15661)
+			.saturating_add(RocksDbWeight::get().reads(5_u64))
+			.saturating_add(RocksDbWeight::get().writes(4_u64))
+	}
+	/// Storage: LendingBorrowing Pools (r:1 w:1)
+	/// Proof Skipped: LendingBorrowing Pools (max_values: None, max_size: None, mode: Measured)
+	/// Storage: LendingBorrowing PoolUsers (r:1 w:1)
+	/// Proof Skipped: LendingBorrowing PoolUsers (max_values: None, max_size: None, mode: Measured)
+	/// Storage: Tokens Accounts (r:2 w:2)
+	/// Proof: Tokens Accounts (max_values: None, max_size: Some(136), added: 2611, mode: MaxEncodedLen)
+	/// Storage: System Account (r:2 w:0)
+	/// Proof: System Account (max_values: None, max_size: Some(128), added: 2603, mode: MaxEncodedLen)
+	fn return_tokens_full_repayment() -> Weight {
+		// Proof Size summary in bytes:
+		//  Measured:  `1653`
+		//  Estimated: `18684`
+		// Minimum execution time: 92_924 nanoseconds.
+		Weight::from_parts(97_753_000, 18684)
+			.saturating_add(RocksDbWeight::get().reads(6_u64))
+			.saturating_add(RocksDbWeight::get().writes(4_u64))
+	}
+	/// Storage: LendingBorrowing Pools (r:1 w:1)
+	/// Proof Skipped: LendingBorrowing Pools (max_values: None, max_size: None, mode: Measured)
+	/// Storage: LendingBorrowing PoolUsers (r:1 w:1)
+	/// Proof Skipped: LendingBorrowing PoolUsers (max_values: None, max_size: None, mode: Measured)
+	/// Storage: Tokens Accounts (r:2 w:2)
+	/// Proof: Tokens Accounts (max_values: None, max_size: Some(136), added: 2611, mode: MaxEncodedLen)
+	/// Storage: System Account (r:1 w:0)
+	/// Proof: System Account (max_values: None, max_size: Some(128), added: 2603, mode: MaxEncodedLen)
+	fn return_tokens_full_debt_and_part_of_borrowed() -> Weight {
+		// Proof Size summary in bytes:
+		//  Measured:  `1447`
+		//  Estimated: `15669`
+		// Minimum execution time: 77_336 nanoseconds.
+		Weight::from_parts(79_790_000, 15669)
+			.saturating_add(RocksDbWeight::get().reads(5_u64))
+			.saturating_add(RocksDbWeight::get().writes(4_u64))
+	}
+	/// Storage: LendingBorrowing Pools (r:1 w:1)
+	/// Proof Skipped: LendingBorrowing Pools (max_values: None, max_size: None, mode: Measured)
+	/// Storage: LendingBorrowing PoolUsers (r:1 w:1)
+	/// Proof Skipped: LendingBorrowing PoolUsers (max_values: None, max_size: None, mode: Measured)
+	/// Storage: Tokens Accounts (r:2 w:2)
+	/// Proof: Tokens Accounts (max_values: None, max_size: Some(136), added: 2611, mode: MaxEncodedLen)
+	/// Storage: System Account (r:1 w:0)
+	/// Proof: System Account (max_values: None, max_size: Some(128), added: 2603, mode: MaxEncodedLen)
+	fn return_tokens_part_of_debt_payed() -> Weight {
+		// Proof Size summary in bytes:
+		//  Measured:  `1447`
+		//  Estimated: `15669`
+		// Minimum execution time: 74_209 nanoseconds.
+		Weight::from_parts(77_876_000, 15669)
+			.saturating_add(RocksDbWeight::get().reads(5_u64))
+			.saturating_add(RocksDbWeight::get().writes(4_u64))
+	}
+}
