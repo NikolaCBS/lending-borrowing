@@ -421,8 +421,10 @@ pub mod pallet {
         }
     }
 
+    /*
     #[pallet::hooks]
     impl<T: Config> Hooks<BlockNumberFor<T>> for Pallet<T> {
+
         fn on_runtime_upgrade() -> Weight {
             if Self::pallet_storage_version() == StorageVersion::V1 {
                 let weight = migrations::migrate::<T>();
@@ -432,7 +434,9 @@ pub mod pallet {
                 Weight::zero()
             }
         }
+
     }
+    */
 
     impl<T: Config> Pallet<T> {
         /// The account ID of pallet
